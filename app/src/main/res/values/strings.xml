@@ -1,0 +1,48 @@
+<resources>
+    <string name="app_name">Aria2 手机版</string>
+
+    <!-- 通用 -->
+    <string name="common_cancel">取消</string>
+    <string name="common_done">完成</string>
+    <string name="common_add">添加</string>
+    <string name="common_save">保存</string>
+    <string name="common_delete">删除</string>
+    <string name="common_retry">重试</string>
+
+    <!-- 主屏 -->
+    <string name="home_title">下载</string>
+    <string name="home_connected">已连接</string>
+    <string name="home_connecting">连接中…</string>
+    <string name="home_disconnected">未连接</string>
+    <string name="home_empty_title">还没有下载任务</string>
+    <string name="home_empty_hint">分享一个链接或用「打开链接」发送给本应用，链接会自动出现在这里</string>
+    <string name="home_add_hint">手动输入链接</string>
+    <string name="home_settings">设置</string>
+
+    <!-- 添加 -->
+    <string name="add_title">新建下载</string>
+    <string name="add_url_label">链接</string>
+    <string name="add_url_placeholder">https://… 或 magnet:?xt=…</string>
+    <string name="add_out_label">保存文件名（可选）</string>
+    <string name="add_dir_label">保存目录（可选）</string>
+    <string name="add_opts_label">aria2 参数（可选）</string>
+    <string name="add_opts_placeholder">每行一个，例如 split=16\nseed-time=0</string>
+    <string name="add_start">开始下载</string>
+
+    <!-- 设置 -->
+    <string name="settings_title">设置</string>
+    <string name="settings_conn_title">aria2 服务器</string>
+    <string name="settings_rpc_label">RPC 地址</string>
+    <string name="settings_rpc_hint">http://192.168.1.10:6800/jsonrpc</string>
+    <string name="settings_secret_label">RPC 密钥（可选）</string>
+    <string name="settings_poll_interval">刷新间隔（秒）</string>
+    <string name="settings_keep_screen_on">连接时保持屏幕常亮</string>
+    <string name="settings_download_title">下载偏好（aria2c 参数）</string>
+    <string name="settings_dir_label">默认保存目录</string>
+    <string name="settings_opt_hint">split / max-connection-per-server / seed-time 等</string>
+    <string name="settings_test">测试连接</string>
+
+    <!-- 通知 -->
+    <string name="notification_channel">下载进度</string>
+    <string name="notification_channel_desc">显示当前正在进行和已暂停的下载任务进度</string>
+</resources>
