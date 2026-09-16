@@ -22,13 +22,14 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Android SDK (command line tools)
-        uses: android-actions/setup-android@v3
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
+
+      # ubuntu-latest 已预装完整 Android SDK；此处仅写入 sdk.dir 供 AGP 定位。
+      - name: Point Gradle at preinstalled Android SDK
+        run: printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
 
       # 仅当配置了签名 Secrets 时写入正式签名；否则 release 构建自动回退 debug 签名，
       # 保证 CI 始终能产出可安装的 APK。
