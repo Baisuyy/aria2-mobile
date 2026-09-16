@@ -111,6 +111,7 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
                 BrowserScreen(
                     initialUrl = url,
                     onBack = { navigateTo(navController, "home") },
+                    onCapture = { captured -> navController.navigate("add?url=${Uri.encode(captured)}") },
                 )
             }
             composable(
