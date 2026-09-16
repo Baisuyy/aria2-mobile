@@ -35,6 +35,7 @@ data class UiState(
     val prefs: DownloadPrefs = DownloadPrefs(),
     val pollInterval: Int = 2,
     val keepScreenOn: Boolean = false,
+    val embeddedEnabled: Boolean = true,
     val connection: ConnectionState = ConnectionState.Idle,
     val downloads: List<DownloadItem> = emptyList(),
     val lastError: String? = null,
@@ -80,6 +81,9 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
             settings.keepScreenOn.collect { k -> _state.update { it.copy(keepScreenOn = k) } }
         }
         viewModelScope.launch {
+            settings.embeddedEnabled.collect { e -> _state.update { it.copy(embeddedEnabled = e) } }
+        }
+        viewModelScope.launch {
             settings.knownGids.collect { gids ->
                 knownGids.clear()
                 knownGids.addAll(gids)
@@ -106,6 +110,10 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setKeepScreenOn(value: Boolean) {
         viewModelScope.launch { settings.setKeepScreenOn(value) }
+    }
+
+    fun setEmbeddedEnabled(value: Boolean) {
+        viewModelScope.launch { settings.setEmbeddedEnabled(value) }
     }
 
     // ---- 新增下载 ----

@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aria2.mobile.data.Aria2Client
 import com.aria2.mobile.data.Aria2Server
 import com.aria2.mobile.data.DownloadPrefs
+import com.aria2.mobile.service.EmbeddedAria2
 import com.aria2.mobile.viewmodel.DownloadViewModel
 import kotlinx.coroutines.launch
 
@@ -70,6 +71,40 @@ fun SettingsScreen(viewModel: DownloadViewModel, onBack: () -> Unit) {
             }
             Text("设置", style = MaterialTheme.typography.headlineMedium)
         }
+
+        SectionTitle("内置 aria2 服务")
+        val embeddedStatus by EmbeddedAria2.status.collectAsStateWithLifecycle()
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp)
+                .clickable { viewModel.setEmbeddedEnabled(!state.embeddedEnabled) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("应用内自动开启本地 aria2", style = MaterialTheme.typography.titleSmall)
+                val statusText = when (embeddedStatus) {
+                    EmbeddedAria2.Status.Running -> "运行中 · ${EmbeddedAria2.rpcUrl()}"
+                    EmbeddedAria2.Status.Starting -> "启动中…"
+                    EmbeddedAria2.Status.Failed -> "启动失败：当前设备可能不支持内置二进制"
+                    else -> "待启动"
+                }
+                Text(
+                    statusText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (embeddedStatus == EmbeddedAria2.Status.Failed)
+                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                )
+            }
+            Switch(checked = state.embeddedEnabled, onCheckedChange = { viewModel.setEmbeddedEnabled(it) })
+        }
+        Text(
+            "开启后无需另装服务即可下载，文件保存在应用专属目录（本机 RPC 默认 ${EmbeddedAria2.rpcUrl()}）。" +
+                "若提示不支持，请关闭此项，改连远程 aria2 服务。",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        Spacer(Modifier.height(16.dp))
 
         SectionTitle("aria2 服务器")
         SettingsField("RPC 地址  ·  http(s)://主机:端口/jsonrpc") {

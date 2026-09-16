@@ -1,10 +1,13 @@
 package com.aria2.mobile
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -15,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -24,6 +28,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aria2.mobile.data.LinkParser
+import com.aria2.mobile.service.Aria2Service
 import com.aria2.mobile.ui.components.AppNavigationBar
 import com.aria2.mobile.ui.screens.AddScreen
 import com.aria2.mobile.ui.screens.BrowserScreen
@@ -37,8 +42,14 @@ class MainActivity : ComponentActivity() {
     private val viewModel: DownloadViewModel by viewModels()
     private var pendingLink by mutableStateOf<String?>(null)
 
+    // 通知权限：用于前台服务常驻"aria2 本地服务"通知
+    private val notifPerm = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         pendingLink = LinkParser.parse(intent)
         setContent {
             Aria2Theme {
@@ -62,6 +73,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlConsumed: () -> Unit) {
     val navController = rememberNavController()
+    val context = LocalContext.current
+
+    // 内嵌 aria2 本地服务：随开关启用/停用
+    val appState by viewModel.state.collectAsStateWithLifecycle()
+    LaunchedEffect(appState.embeddedEnabled) {
+        if (appState.embeddedEnabled) Aria2Service.start(context.applicationContext)
+        else Aria2Service.stop(context.applicationContext)
+    }
 
     // 收到外部链接：铵链到“新建下载”，让用户确认后一键开始
     LaunchedEffect(urlToOpen) {

@@ -21,6 +21,7 @@ class SettingsStore(private val context: Context) {
     private val keyOptions = stringPreferencesKey("default_options")
     private val keyPoll = intPreferencesKey("poll_interval")
     private val keyKeepOn = booleanPreferencesKey("keep_screen_on")
+    private val keyEmbedded = booleanPreferencesKey("embedded_enabled")
     private val keyKnownGids = stringPreferencesKey("known_gids")
 
     /** 已跟踪的 gid 列表（JSON 数组字符串），便于跨重启恢复。 */
@@ -57,6 +58,9 @@ class SettingsStore(private val context: Context) {
 
     val keepScreenOn: Flow<Boolean> = context.dataStore.data.map { p -> p[keyKeepOn] ?: false }
 
+    /** 是否启用内嵌 aria2 本地服务（默认开）。 */
+    val embeddedEnabled: Flow<Boolean> = context.dataStore.data.map { p -> p[keyEmbedded] ?: true }
+
     suspend fun setServer(rpcUrl: String, secret: String) {
         context.dataStore.edit { p ->
             p[keyRpc] = rpcUrl.trim()
@@ -77,5 +81,9 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setKeepScreenOn(value: Boolean) {
         context.dataStore.edit { p -> p[keyKeepOn] = value }
+    }
+
+    suspend fun setEmbeddedEnabled(value: Boolean) {
+        context.dataStore.edit { p -> p[keyEmbedded] = value }
     }
 }
