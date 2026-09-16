@@ -38,15 +38,13 @@ jobs:
           if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
             mkdir -p keystore
             echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore/release.jks
-            cat > keystore.properties <<'EOF'
-storeFile=./keystore/release.jks
-storePassword=${{ secrets.KEYSTORE_PASSWORD }}
-keyAlias=${{ secrets.KEY_ALIAS }}
-keyPassword=${{ secrets.KEY_PASSWORD }}
-EOF
+            printf 'storeFile=./keystore/release.jks\n' > keystore.properties
+            printf 'storePassword=%s\n' "${{ secrets.KEYSTORE_PASSWORD }}" >> keystore.properties
+            printf 'keyAlias=%s\n' "${{ secrets.KEY_ALIAS }}" >> keystore.properties
+            printf 'keyPassword=%s\n' "${{ secrets.KEY_PASSWORD }}" >> keystore.properties
             echo "restored release keystore"
           else
-            echo "no keystore secrets — using debug-signing fallback"
+            echo "no keystore secrets - using debug-signing fallback"
           fi
 
       - name: Build release APK
