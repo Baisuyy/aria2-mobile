@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aria2.mobile.data.LinkParser
 import com.aria2.mobile.ui.screens.AddScreen
+import com.aria2.mobile.ui.screens.BrowserScreen
 import com.aria2.mobile.ui.screens.HomeScreen
 import com.aria2.mobile.ui.screens.SettingsScreen
 import com.aria2.mobile.ui.theme.Aria2Theme
@@ -68,11 +69,32 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
             HomeScreen(
                 viewModel = viewModel,
                 onOpenAdd = { url -> navController.navigate("add?url=${(url ?: "").let { Uri.encode(it) }}") },
+                onOpenBrowser = { navController.navigate("browser?url=") },
                 onOpenSettings = { navController.navigate("settings") },
             )
         }
         composable("settings") {
             SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
+        }
+        composable(
+            route = "browser?url={url}",
+            arguments = listOf(
+                navArgument("url") {
+                    type = NavType.StringType
+                    defaultValue = ""
+                }
+            ),
+        ) { entry ->
+            val raw = entry.arguments?.getString("url").orEmpty()
+            val url = raw.ifBlank { null }?.let { Uri.decode(it) }
+            BrowserScreen(
+                initialUrl = url,
+                onBack = { navController.popBackStack() },
+                onCapture = { captured ->
+                    // 网页里点的链接 / 下载文件：捕获后进入“新建下载”确认，参数名固定为 capture
+                    navController.navigate("add?url=${Uri.encode(captured)}")
+                },
+            )
         }
         composable(
             route = "add?url={url}",

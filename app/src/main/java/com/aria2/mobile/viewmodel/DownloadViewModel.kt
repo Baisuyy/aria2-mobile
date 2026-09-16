@@ -8,6 +8,7 @@ import com.aria2.mobile.data.Aria2Client
 import com.aria2.mobile.data.Aria2Server
 import com.aria2.mobile.data.DownloadItem
 import com.aria2.mobile.data.DownloadPrefs
+import com.aria2.mobile.data.DownloadStatus
 import com.aria2.mobile.data.SettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -36,6 +38,12 @@ data class UiState(
     val connection: ConnectionState = ConnectionState.Idle,
     val downloads: List<DownloadItem> = emptyList(),
     val lastError: String? = null,
+    // 聚合统计
+    val totalSpeed: Long = 0,
+    val activeCount: Int = 0,
+    val waitingCount: Int = 0,
+    val completeCount: Int = 0,
+    val errorCount: Int = 0,
 )
 
 class DownloadViewModel(app: Application) : AndroidViewModel(app) {
@@ -48,6 +56,9 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     private val knownGids = CopyOnWriteArrayList<String>()
     private var pollJob: Job? = null
+    private val pollMutex = kotlinx.coroutines.sync.Mutex()
+    private var hasConnectedOnce = false
+    private var consecutiveFailures = 0
 
     init {
         viewModelScope.launch {
@@ -199,30 +210,39 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(connection = ConnectionState.Idle) }
             return
         }
-        if (s.connection == ConnectionState.Connecting) return
-        _state.update { it.copy(connection = ConnectionState.Connecting) }
+        // 用互斥锁避免轮询与手动刷新重入
+        if (!pollMutex.tryLock()) return
         try {
             val items = LinkedHashMap<String, DownloadItem>()
             for (gid in knownGids) {
                 val item = client.tellStatus(server, gid)
                 if (item != null) items[gid] = item
             }
-            // 追加不在本地跟踪、但服务器上处于 active 的任务，保证新任务立即可见
+            hasConnectedOnce = true
+            consecutiveFailures = 0
+            val list = items.values.toList()
             _state.update {
                 it.copy(
                     connection = ConnectionState.Connected,
-                    downloads = items.values.toList(),
+                    downloads = list,
                     lastError = null,
+                    totalSpeed = list.sumOf { d -> if (d.status == DownloadStatus.Active) d.downloadSpeed else 0L },
+                    activeCount = list.count { d -> d.status == DownloadStatus.Active },
+                    waitingCount = list.count { d -> d.status == DownloadStatus.Waiting || d.status == DownloadStatus.Paused },
+                    completeCount = list.count { d -> d.status == DownloadStatus.Complete },
+                    errorCount = list.count { d -> d.status == DownloadStatus.Error },
                 )
             }
         } catch (e: Exception) {
-            _state.update {
-                it.copy(
-                    connection = ConnectionState.Error(e.message ?: "无法连接服务器"),
-                    downloads = it.downloads,
-                )
-            }
-            Log.w("Aria2", "refresh failed", e)
+            // 偶发网络抖动不打断已建立的连接；连续失败或从未成功过才进入 Error
+            consecutiveFailures++
+            val transient = hasConnectedOnce && consecutiveFailures < 3
+            val conn = if (transient) ConnectionState.Connected
+            else ConnectionState.Error(e.message ?: "无法连接服务器")
+            Log.w("Aria2", "refresh failed (${consecutiveFailures})", e)
+            _state.update { it.copy(connection = conn) }
+        } finally {
+            pollMutex.unlock()
         }
     }
 

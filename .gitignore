@@ -9,3 +9,7 @@
 .cxx
 app/build/
 *.zip
+keystore.properties
+keystore/
+*.jks
+*.keystore

@@ -45,4 +45,15 @@
     <!-- 通知 -->
     <string name="notification_channel">下载进度</string>
     <string name="notification_channel_desc">显示当前正在进行和已暂停的下载任务进度</string>
+
+    <!-- 内置浏览器 -->
+    <string name="browser_title">内置浏览器</string>
+    <string name="browser_url_placeholder">输入网址或搜索…</string>
+    <string name="browser_go">打开</string>
+    <string name="browser_capture">把当前链接加入下载</string>
+    <string name="browser_captured_hint">已捕获：%1$s</string>
+    <string name="browser_back">后退</string>
+    <string name="browser_forward">前进</string>
+    <string name="browser_reload">刷新</string>
+    <string name="browser_open_in_app">用内置浏览器打开</string>
 </resources>

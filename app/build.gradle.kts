@@ -1,3 +1,14 @@
+import java.util.Properties
+
+// 读取本地签名配置（代号 keystore.properties）。CI 或本地没有该文件时，
+// release 构建自动回退到 debug 签名，保证始终能产出可安装的 APK。
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties()
+val hasKeystore = keystorePropertiesFile.exists()
+if (hasKeystore) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,13 +23,33 @@ android {
         applicationId = "com.aria2.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
+    }
+
+    signingConfigs {
+        create("release") {
+            if (hasKeystore) {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
+            // 签名是本次重点；minify/R8 留待后续指纹配置后再开启
             isMinifyEnabled = false
+            isShrinkResources = false
+            // 有正式 keystore 用之；否则回退 debug 签名（CI 产物仍可安装）
+            signingConfig = if (hasKeystore) signingConfigs.getByName("release")
+                            else signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

@@ -30,12 +30,31 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon --console=plain
+      # 仅当配置了签名 Secrets 时写入正式签名；否则 release 构建自动回退 debug 签名，
+      # 保证 CI 始终能产出可安装的 APK。
+      - name: Restore release signing key
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            mkdir -p keystore
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > keystore/release.jks
+            cat > keystore.properties <<'EOF'
+storeFile=./keystore/release.jks
+storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+keyAlias=${{ secrets.KEY_ALIAS }}
+keyPassword=${{ secrets.KEY_PASSWORD }}
+EOF
+            echo "restored release keystore"
+          else
+            echo "no keystore secrets — using debug-signing fallback"
+          fi
 
-      - name: Upload debug APK
+      - name: Build release APK
+        run: gradle :app:assembleRelease --no-daemon --console=plain
+
+      - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: app-release
+          path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error

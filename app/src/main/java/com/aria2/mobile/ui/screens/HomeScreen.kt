@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,9 +20,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.material3.FloatingActionButton
@@ -45,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aria2.mobile.data.DownloadItem
 import com.aria2.mobile.data.DownloadStatus
+import com.aria2.mobile.ui.formatSpeed
 import com.aria2.mobile.ui.components.ConnectionChip
 import com.aria2.mobile.ui.components.DownloadCard
 import com.aria2.mobile.viewmodel.ConnectionState
@@ -54,6 +58,7 @@ import com.aria2.mobile.viewmodel.DownloadViewModel
 fun HomeScreen(
     viewModel: DownloadViewModel,
     onOpenAdd: (initialUrl: String?) -> Unit,
+    onOpenBrowser: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -77,26 +82,37 @@ fun HomeScreen(
                 connected = connected,
                 connecting = connecting,
                 error = error,
+                onOpenBrowser = onOpenBrowser,
                 onOpenSettings = onOpenSettings,
             )
             if (state.downloads.isEmpty()) {
                 EmptyState(onOpenAdd = { onOpenAdd(null) })
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    items(state.downloads, key = { it.gid }) { item ->
-                        AnimatedVisibility(
-                            visible = true,
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            DownloadCard(
-                                item = item,
-                                onToggle = { toggle(viewModel, it) },
-                                onRemove = { viewModel.remove(it.gid) },
-                            )
+                Column(Modifier.fillMaxSize()) {
+                    StatsBanner(
+                        totalSpeed = state.totalSpeed,
+                        activeCount = state.activeCount,
+                        waitingCount = state.waitingCount,
+                        completeCount = state.completeCount,
+                        errorCount = state.errorCount,
+                    )
+                    LazyColumn(
+                        Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        items(state.downloads, key = { it.gid }) { item ->
+                            AnimatedVisibility(
+                                visible = true,
+                                enter = expandVertically() + fadeIn(),
+                                exit = shrinkVertically() + fadeOut(),
+                            ) {
+                                DownloadCard(
+                                    item = item,
+                                    onToggle = { toggle(viewModel, it) },
+                                    onRemove = { viewModel.remove(it.gid) },
+                                )
+                            }
                         }
                     }
                 }
@@ -126,6 +142,7 @@ private fun TopBar(
     connected: Boolean,
     connecting: Boolean,
     error: String?,
+    onOpenBrowser: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     Row(
@@ -137,9 +154,52 @@ private fun TopBar(
         Text("下载", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.weight(1f))
         ConnectionChip(connected, connecting, error)
+        IconButton(onClick = onOpenBrowser) {
+            Icon(Icons.Filled.Public, contentDescription = "内置浏览器", tint = MaterialTheme.colorScheme.onBackground)
+        }
         IconButton(onClick = onOpenSettings) {
             Icon(Icons.Filled.Settings, contentDescription = "设置", tint = MaterialTheme.colorScheme.onBackground)
         }
+    }
+}
+
+@Composable
+private fun StatsBanner(
+    totalSpeed: Long,
+    activeCount: Int,
+    waitingCount: Int,
+    completeCount: Int,
+    errorCount: Int,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("总速度", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            Text(formatSpeed(totalSpeed), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        StatItem(activeCount, "进行中", MaterialTheme.colorScheme.primary)
+        StatItem(waitingCount, "排队/暂停", MaterialTheme.colorScheme.secondary)
+        StatItem(completeCount, "已完成", MaterialTheme.colorScheme.secondary)
+        if (errorCount > 0) {
+            StatItem(errorCount, "出错", MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun StatItem(count: Int, label: String, color: androidx.compose.ui.graphics.Color) {
+    Column(
+        Modifier.padding(start = 16.dp),
+        horizontalAlignment = Alignment.End,
+    ) {
+        Text("$count", style = MaterialTheme.typography.titleMedium, color = color)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
     }
 }
 
