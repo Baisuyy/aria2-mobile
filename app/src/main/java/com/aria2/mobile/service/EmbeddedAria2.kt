@@ -1,6 +1,7 @@
 package com.aria2.mobile.service
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import java.io.File
 import java.io.IOException
@@ -15,13 +16,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * 内嵌 aria2 服务管理器。
  *
  * 借鉴 aria-ng-gui-android 的自托管做法：
- * - 把预编译的 aria2c（assets/aria2c）复制到应用数据目录并设可执行位；
- * - 在后台用 ProcessBuilder 拉成本地子进程；
+ * - 打包时把预编译的 aria2c 放进 jniLibs/{abi}，随 ABI 拆包分发（armeabi-v7a 32 位
+ *   / arm64-v8a 64 位），安装后即被解压到 applicationInfo.nativeLibraryDir；
+ * - 运行时按当前设备的 ABI 从 nativeLibraryDir 把对应该架构的二进制复制到应用私有
+ *   目录并设可执行位，然后由 ProcessBuilder 拉成本地子进程；
  * - RPC 端口自动探测空闲端口（默认 6800 起），配置写盘后交给 aria2c；
  * - 下载目录用应用专属外部目录，规避 Android 10+ 分区存储权限限制。
- *
- * 注意：目前内置的二进制为 32 位 ARM(lib/armeabi-v7a)，仅能在支持 32 位兼容运行
- * 的设备上工作；纯 64 位/模拟器设备可能需要连接远程 aria2，或替换为相应 ABI 二进制。
  */
 object EmbeddedAria2 {
 
@@ -48,12 +48,20 @@ object EmbeddedAria2 {
 
     fun rpcUrl(): String = "http://127.0.0.1:${_port.value}$RPC_PATH"
 
-    /** 从 assets 解出二进制并设置可执行位。 */
+    /** 从 nativeLibraryDir 取出与当前设备 ABI 匹配的二进制并设置可执行位。 */
     private fun provision(ctx: Context): File {
         val bin = binaryFile(ctx)
         if (!bin.exists() || bin.length() == 0L) {
             bin.parentFile?.mkdirs()
-            ctx.assets.open("aria2c").use { input ->
+            val abi = Build.SUPPORTED_ABIS.firstOrNull()
+            val native = File(ctx.applicationInfo.nativeLibraryDir, "aria2c")
+            if (!native.exists() || native.length() == 0L) {
+                throw IllegalStateException(
+                    if (abi != null) "没有匹配 ${abi} 架构的内嵌 aria2c，请改连远程服务器"
+                    else "未找到可用 ABI 的内嵌 aria2c"
+                )
+            }
+            native.inputStream().use { input ->
                 bin.outputStream().use { output -> input.copyTo(output) }
             }
         }
