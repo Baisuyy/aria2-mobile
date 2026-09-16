@@ -5,7 +5,6 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,18 +23,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.outlined.FileDownloadOff
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -58,8 +57,6 @@ import com.aria2.mobile.viewmodel.DownloadViewModel
 fun HomeScreen(
     viewModel: DownloadViewModel,
     onOpenAdd: (initialUrl: String?) -> Unit,
-    onOpenBrowser: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -78,13 +75,7 @@ fun HomeScreen(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(
-                connected = connected,
-                connecting = connecting,
-                error = error,
-                onOpenBrowser = onOpenBrowser,
-                onOpenSettings = onOpenSettings,
-            )
+            TopBar(connected = connected, connecting = connecting, error = error)
             if (state.downloads.isEmpty()) {
                 EmptyState(onOpenAdd = { onOpenAdd(null) })
             } else {
@@ -142,23 +133,22 @@ private fun TopBar(
     connected: Boolean,
     connecting: Boolean,
     error: String?,
-    onOpenBrowser: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
+    Column(
+        Modifier
             .fillMaxWidth()
-            .padding(top = 20.dp, start = 20.dp, end = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 14.dp),
     ) {
-        Text("下载", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.weight(1f))
-        ConnectionChip(connected, connecting, error)
-        IconButton(onClick = onOpenBrowser) {
-            Icon(Icons.Filled.Public, contentDescription = "内置浏览器", tint = MaterialTheme.colorScheme.onBackground)
-        }
-        IconButton(onClick = onOpenSettings) {
-            Icon(Icons.Filled.Settings, contentDescription = "设置", tint = MaterialTheme.colorScheme.onBackground)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("下载", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "aria2 本地服务",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            ConnectionChip(connected, connecting, error)
         }
     }
 }
@@ -171,31 +161,60 @@ private fun StatsBanner(
     completeCount: Int,
     errorCount: Int,
 ) {
-    Row(
+    Surface(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .clip(RoundedCornerShape(18.dp)),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp,
+        shadowElevation = 0.dp,
     ) {
-        Column(Modifier.weight(1f)) {
-            Text("总速度", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-            Text(formatSpeed(totalSpeed), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        }
-        StatItem(activeCount, "进行中", MaterialTheme.colorScheme.primary)
-        StatItem(waitingCount, "排队/暂停", MaterialTheme.colorScheme.secondary)
-        StatItem(completeCount, "已完成", MaterialTheme.colorScheme.secondary)
-        if (errorCount > 0) {
-            StatItem(errorCount, "出错", MaterialTheme.colorScheme.error)
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // 总速度
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Icon(
+                        Icons.Filled.NetworkCheck,
+                        contentDescription = null,
+                        modifier = Modifier.size(15.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Text(
+                        "总速度",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    formatSpeed(totalSpeed),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            VerticalDivider(Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            StatItem(activeCount, "进行中", MaterialTheme.colorScheme.primary)
+            VerticalDivider(Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            StatItem(waitingCount, "排队中", MaterialTheme.colorScheme.secondary)
+            VerticalDivider(Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            StatItem(completeCount, "已完成", MaterialTheme.colorScheme.secondary)
+            if (errorCount > 0) {
+                VerticalDivider(Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                StatItem(errorCount, "出错", MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
 
 @Composable
-private fun StatItem(count: Int, label: String, color: androidx.compose.ui.graphics.Color) {
+private fun StatItem(count: Int, label: String, color: Color) {
     Column(
-        Modifier.padding(start = 16.dp),
+        Modifier.padding(start = 14.dp),
         horizontalAlignment = Alignment.End,
     ) {
         Text("$count", style = MaterialTheme.typography.titleMedium, color = color)

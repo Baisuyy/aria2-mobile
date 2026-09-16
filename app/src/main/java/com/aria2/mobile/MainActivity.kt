@@ -6,18 +6,25 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aria2.mobile.data.LinkParser
+import com.aria2.mobile.ui.components.AppNavigationBar
 import com.aria2.mobile.ui.screens.AddScreen
 import com.aria2.mobile.ui.screens.BrowserScreen
 import com.aria2.mobile.ui.screens.HomeScreen
@@ -64,54 +71,73 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
         }
     }
 
-    NavHost(navController = navController, startDestination = "home") {
-        composable("home") {
-            HomeScreen(
-                viewModel = viewModel,
-                onOpenAdd = { url -> navController.navigate("add?url=${(url ?: "").let { Uri.encode(it) }}") },
-                onOpenBrowser = { navController.navigate("browser?url=") },
-                onOpenSettings = { navController.navigate("settings") },
-            )
+    val backStack by navController.currentBackStackEntryAsState()
+    val currentRoute = backStack?.destination?.route
+    val showBottomBar = currentRoute in listOf("home", "settings") || currentRoute?.startsWith("browser") == true
+
+    Scaffold(
+        bottomBar = {
+            if (showBottomBar) {
+                AppNavigationBar(currentRoute = currentRoute, onNavigate = { route -> navigateTo(navController, route) })
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+    ) { padding ->
+        NavHost(
+            navController = navController,
+            startDestination = "home",
+            modifier = Modifier.padding(padding),
+        ) {
+            composable("home") {
+                HomeScreen(
+                    viewModel = viewModel,
+                    onOpenAdd = { url -> navController.navigate("add?url=${(url ?: "").let { Uri.encode(it) }}") },
+                )
+            }
+            composable("settings") {
+                SettingsScreen(viewModel = viewModel, onBack = { navigateTo(navController, "home") })
+            }
+            composable(
+                route = "browser?url={url}",
+                arguments = listOf(
+                    navArgument("url") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    }
+                ),
+            ) { entry ->
+                val raw = entry.arguments?.getString("url").orEmpty()
+                val url = raw.ifBlank { null }?.let { Uri.decode(it) }
+                BrowserScreen(
+                    initialUrl = url,
+                    onBack = { navigateTo(navController, "home") },
+                )
+            }
+            composable(
+                route = "add?url={url}",
+                arguments = listOf(
+                    navArgument("url") {
+                        type = NavType.StringType
+                        defaultValue = ""
+                    }
+                ),
+            ) { entry ->
+                val raw = entry.arguments?.getString("url").orEmpty()
+                val url = raw.ifBlank { null }?.let { Uri.decode(it) }
+                AddScreen(
+                    viewModel = viewModel,
+                    initialUrl = url,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
-        composable("settings") {
-            SettingsScreen(viewModel = viewModel, onBack = { navController.popBackStack() })
-        }
-        composable(
-            route = "browser?url={url}",
-            arguments = listOf(
-                navArgument("url") {
-                    type = NavType.StringType
-                    defaultValue = ""
-                }
-            ),
-        ) { entry ->
-            val raw = entry.arguments?.getString("url").orEmpty()
-            val url = raw.ifBlank { null }?.let { Uri.decode(it) }
-            BrowserScreen(
-                initialUrl = url,
-                onBack = { navController.popBackStack() },
-                onCapture = { captured ->
-                    // 网页里点的链接 / 下载文件：捕获后进入“新建下载”确认，参数名固定为 capture
-                    navController.navigate("add?url=${Uri.encode(captured)}")
-                },
-            )
-        }
-        composable(
-            route = "add?url={url}",
-            arguments = listOf(
-                navArgument("url") {
-                    type = NavType.StringType
-                    defaultValue = ""
-                }
-            ),
-        ) { entry ->
-            val raw = entry.arguments?.getString("url").orEmpty()
-            val url = raw.ifBlank { null }?.let { Uri.decode(it) }
-            AddScreen(
-                viewModel = viewModel,
-                initialUrl = url,
-                onBack = { navController.popBackStack() },
-            )
-        }
+    }
+}
+
+private fun navigateTo(nav: NavHostController, route: String) {
+    nav.navigate(route) {
+        popUpTo("home") { saveState = true }
+        launchSingleTop = true
+        restoreState = true
     }
 }

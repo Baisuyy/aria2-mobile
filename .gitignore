@@ -13,3 +13,5 @@ keystore.properties
 keystore/
 *.jks
 *.keystore
+# kotlin daemon / build logs
+.kotlin/
