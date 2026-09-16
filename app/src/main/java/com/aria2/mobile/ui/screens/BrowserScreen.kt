@@ -1,9 +1,13 @@
 package com.aria2.mobile.ui.screens
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.view.View
 import android.webkit.DownloadListener
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -30,14 +34,18 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -69,9 +77,18 @@ fun BrowserScreen(
     var urlText by rememberSaveable { mutableStateOf(initialUrl ?: "") }
     var hasLoaded by remember { mutableStateOf(initialUrl != null) }
     var progress by remember { mutableIntStateOf(0) }
+    var loadError by remember { mutableStateOf<String?>(null) }
 
     val webView = remember(context) {
-        configuredWebView(context, url = initialUrl, onUrlChange = { urlText = it }, onProgress = { progress = it }, onCapture = onCapture)
+        configuredWebView(
+            context = context,
+            url = initialUrl,
+            onUrlChange = { urlText = it },
+            onProgress = { progress = it },
+            onStart = { loadError = null },
+            onError = { loadError = it },
+            onCapture = onCapture,
+        )
     }
 
     BackHandler {
@@ -145,13 +162,26 @@ fun BrowserScreen(
                 .fillMaxWidth()
                 .weight(1f),
         ) {
-            if (hasLoaded) {
-                AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
-            } else {
-                BrowserStart(onGo = { load(webView, urlText) { hasLoaded = true } })
+            when {
+                loadError != null -> LoadErrorView(
+                    message = loadError.orEmpty(),
+                    canGoBack = webView.canGoBack(),
+                    onBack = { if (webView.canGoBack()) webView.goBack() },
+                    onRetry = { loadError = null; webView.reload() },
+                    onExternal = { openExternally(context, urlText) },
+                )
+                hasLoaded -> AndroidView(factory = { webView }, modifier = Modifier.fillMaxSize())
+                else -> BrowserStart(onGo = { load(webView, urlText) { hasLoaded = true } })
             }
         }
     }
+}
+
+private fun openExternally(context: Context, rawUrl: String) {
+    val t = rawUrl.trim()
+    if (t.isBlank()) return
+    val uri = Uri.parse(if (t.contains("://")) t else "https://$t")
+    context.startActivity(Intent(Intent.ACTION_VIEW, uri))
 }
 
 private fun load(view: WebView, url: String, onStarted: () -> Unit) {
@@ -169,6 +199,8 @@ private fun configuredWebView(
     url: String?,
     onUrlChange: (String) -> Unit,
     onProgress: (Int) -> Unit,
+    onStart: () -> Unit,
+    onError: (String) -> Unit,
     onCapture: (String) -> Unit,
 ): WebView {
     return WebView(context).apply {
@@ -197,6 +229,18 @@ private fun configuredWebView(
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 url?.let(onUrlChange)
+                onStart()
+            }
+
+            override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                if (request != null && request.isForMainFrame) {
+                    onError(error?.description?.toString() ?: "页面加载失败")
+                }
+            }
+
+            @Deprecated("API < 23")
+            override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                if (failingUrl == view?.url) onError(description ?: "页面加载失败")
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -221,6 +265,49 @@ private fun isExternalOrDownloadScheme(url: String): Boolean = when {
     url.startsWith("http://") || url.startsWith("https://") -> false
     url.startsWith("about:") || url.startsWith("data:") -> false
     else -> true
+}
+
+@Composable
+private fun LoadErrorView(
+    message: String,
+    canGoBack: Boolean,
+    onBack: () -> Unit,
+    onRetry: () -> Unit,
+    onExternal: () -> Unit,
+) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.errorContainer) {
+            Icon(
+                Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier.padding(20.dp).size(38.dp),
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text("网页加载失败", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            message.ifBlank { "可能没有网络连接，或该网站阻止了内嵌浏览器访问" },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(18.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (canGoBack) {
+                TextButton(onClick = onBack) { Text("返回") }
+            }
+            OutlinedButton(onClick = onExternal) { Text("外部浏览器打开") }
+            Button(onClick = onRetry) { Text("重试") }
+        }
+    }
 }
 
 @Composable

@@ -24,7 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.FileDownloadOff
+import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +59,7 @@ import com.aria2.mobile.viewmodel.DownloadViewModel
 fun HomeScreen(
     viewModel: DownloadViewModel,
     onOpenAdd: (initialUrl: String?) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -73,9 +76,24 @@ fun HomeScreen(
     val connecting = state.connection == ConnectionState.Connecting
     val error = (state.connection as? ConnectionState.Error)?.message
 
+    val subtitle = when (state.connection) {
+        ConnectionState.Connected -> "aria2 已连接"
+        ConnectionState.Connecting -> "aria2 连接中…"
+        ConnectionState.Idle -> "aria2 服务未配置"
+        is ConnectionState.Error -> "aria2 连不上"
+    }
+
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
-            TopBar(connected = connected, connecting = connecting, error = error)
+            TopBar(
+                connected = connected,
+                connecting = connecting,
+                error = error,
+                subtitle = subtitle,
+            )
+            if (!connected && !connecting) {
+                ServerSetupCard(requiresConfig = state.connection == ConnectionState.Idle, message = error, onOpenSettings = onOpenSettings)
+            }
             if (state.downloads.isEmpty()) {
                 EmptyState(onOpenAdd = { onOpenAdd(null) })
             } else {
@@ -133,6 +151,7 @@ private fun TopBar(
     connected: Boolean,
     connecting: Boolean,
     error: String?,
+    subtitle: String,
 ) {
     Column(
         Modifier
@@ -143,12 +162,62 @@ private fun TopBar(
             Column(Modifier.weight(1f)) {
                 Text("下载", style = MaterialTheme.typography.headlineMedium)
                 Text(
-                    "aria2 本地服务",
+                    subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
             ConnectionChip(connected, connecting, error)
+        }
+    }
+}
+
+@Composable
+private fun ServerSetupCard(
+    requiresConfig: Boolean,
+    message: String?,
+    onOpenSettings: () -> Unit,
+) {
+    val container = MaterialTheme.colorScheme.tertiaryContainer
+    val onContainer = MaterialTheme.colorScheme.onTertiaryContainer
+    Surface(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(18.dp)),
+        color = container,
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Outlined.Dns,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = onContainer,
+            )
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (requiresConfig) "aria2 服务未配置" else "aria2 连接失败",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = onContainer,
+                )
+                Text(
+                    message?.takeIf { !requiresConfig }
+                        ?: "设置 RPC 地址即可开始下载，例如 http://127.0.0.1:6800/jsonrpc",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = onContainer.copy(alpha = 0.75f),
+                )
+            }
+            Spacer(Modifier.size(8.dp))
+            Button(
+                onClick = onOpenSettings,
+                shape = RoundedCornerShape(12.dp),
+            ) {
+                Text("去设置")
+            }
         }
     }
 }

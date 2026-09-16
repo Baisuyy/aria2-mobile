@@ -92,6 +92,7 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
                 HomeScreen(
                     viewModel = viewModel,
                     onOpenAdd = { url -> navController.navigate("add?url=${(url ?: "").let { Uri.encode(it) }}") },
+                    onOpenSettings = { navigateTo(navController, "settings") },
                 )
             }
             composable("settings") {
