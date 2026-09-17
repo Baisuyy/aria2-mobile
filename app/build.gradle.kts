@@ -23,8 +23,8 @@ android {
         applicationId = "com.aria2.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.2.1"
 
         // 仅内置这两个架构的 aria2c；ABI 拆包后每个 APK 只带对应架构的二进制
         ndk {

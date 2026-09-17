@@ -112,6 +112,7 @@ object EmbeddedAria2 {
         if (_status.value == Status.Starting) return
         _status.value = Status.Starting
         _log.value = null
+        val abis = Build.SUPPORTED_ABIS.joinToString()
         Thread {
             try {
                 val bin = provision(ctx)
@@ -124,10 +125,15 @@ object EmbeddedAria2 {
                 val proc = pb.start()
                 process = proc
 
-                // 消费输出，避免管道阻塞；并实时回写日志
+                // 消费输出，避免管道阻塞；同时保留最近几行，方便失败时定位原因
+                val tail = ArrayDeque<String>()
                 Thread {
                     try {
-                        proc.inputStream.bufferedReader().forEachLine { line -> Log.i(TAG, line) }
+                        proc.inputStream.bufferedReader().forEachLine { line ->
+                            Log.i(TAG, line)
+                            tail.addLast(line)
+                            while (tail.size > 8) tail.removeFirst()
+                        }
                     } catch (_: Exception) {
                     }
                 }.apply { isDaemon = true }.start()
@@ -136,17 +142,22 @@ object EmbeddedAria2 {
                 Thread.sleep(1400)
                 if (proc.isAlive) {
                     _status.value = Status.Running
+                    _log.value = "设备架构 $abis · 运行于 ${proc.pid()}，端口 $port"
                 } else {
+                    val code = runCatching { proc.exitValue() }.getOrNull()
                     proc.destroy()
                     process = null
                     _status.value = Status.Failed
-                    _log.value = "本地 aria2 进程退出，可能当前设备不支持该二进制"
+                    val detail = tail.joinToString(" ").take(300)
+                    _log.value = "进程退出码 $code（设备架构 $abis）。" +
+                        if (detail.isNotBlank()) " 输出：$detail"
+                        else " 可能当前设备不支持该二进制（如 x86/x86_64 模拟器），可改连远程服务器"
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "start failed", e)
                 process = null
                 _status.value = Status.Failed
-                _log.value = e.message ?: "启动失败"
+                _log.value = (e.message ?: "启动失败") + "（设备架构 ${abis}）"
             }
         }.apply { isDaemon = true }.start()
     }

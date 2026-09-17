@@ -74,6 +74,7 @@ fun SettingsScreen(viewModel: DownloadViewModel, onBack: () -> Unit) {
 
         SectionTitle("内置 aria2 服务")
         val embeddedStatus by EmbeddedAria2.status.collectAsStateWithLifecycle()
+        val embeddedLog by EmbeddedAria2.log.collectAsStateWithLifecycle()
         Row(
             Modifier
                 .fillMaxWidth()
@@ -86,7 +87,7 @@ fun SettingsScreen(viewModel: DownloadViewModel, onBack: () -> Unit) {
                 val statusText = when (embeddedStatus) {
                     EmbeddedAria2.Status.Running -> "运行中 · ${EmbeddedAria2.rpcUrl()}"
                     EmbeddedAria2.Status.Starting -> "启动中…"
-                    EmbeddedAria2.Status.Failed -> "启动失败：当前设备可能不支持内置二进制"
+                    EmbeddedAria2.Status.Failed -> "启动失败"
                     else -> "待启动"
                 }
                 Text(
@@ -95,6 +96,17 @@ fun SettingsScreen(viewModel: DownloadViewModel, onBack: () -> Unit) {
                     color = if (embeddedStatus == EmbeddedAria2.Status.Failed)
                         MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
                 )
+                // 展示进程诊断信息（架构/端口/退出码/报错），便于判断为何启动失败
+                embeddedLog?.takeIf { embeddedStatus == EmbeddedAria2.Status.Running || embeddedStatus == EmbeddedAria2.Status.Failed }
+                    ?.let {
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (embeddedStatus == EmbeddedAria2.Status.Failed)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(top = 2.dp),
+                        )
+                    }
             }
             Switch(checked = state.embeddedEnabled, onCheckedChange = { viewModel.setEmbeddedEnabled(it) })
         }

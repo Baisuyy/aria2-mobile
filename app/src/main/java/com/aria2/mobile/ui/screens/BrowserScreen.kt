@@ -4,8 +4,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.view.View
 import android.webkit.DownloadListener
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -213,8 +213,9 @@ private fun configuredWebView(
         settings.loadWithOverviewMode = true      // 首次加载显示整页，避免手机站被放大截断
         settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW // 允许 https 页内 http 资源，避免白屏
         settings.mediaPlaybackRequiresUserGesture = false
+        settings.blockNetworkLoads = false          // 明确允许网络加载，避免误被当作离线模式
         settings.cacheMode = WebSettings.LOAD_DEFAULT
-        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        // 不强制 LAYER_TYPE_HARDWARE：部分设备上会导致整页白屏/渲染异常
 
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -245,6 +246,13 @@ private fun configuredWebView(
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 onUrlChange(view?.url?.toString().orEmpty())
+            }
+
+            // 渲染进程崩溃（常见于系统 WebView 损坏或设备内存不足）：给出明确提示而非停留在白屏
+            @android.annotation.SuppressLint("WebViewRenderProcessGone")
+            override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                onError("网页渲染进程已结束（系统 WebView 异常或内存不足），请重试")
+                return true
             }
         }
 
