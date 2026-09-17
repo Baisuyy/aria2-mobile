@@ -142,7 +142,7 @@ object EmbeddedAria2 {
                 Thread.sleep(1400)
                 if (proc.isAlive) {
                     _status.value = Status.Running
-                    _log.value = "设备架构 $abis · 运行于 ${proc.pid()}，端口 $port"
+                    _log.value = "设备架构 $abis · 端口 $port"
                 } else {
                     val code = runCatching { proc.exitValue() }.getOrNull()
                     proc.destroy()
