@@ -63,8 +63,8 @@ jobs:
           for f in app-*.apk; do
             case "$f" in
               *universal*)    n="aria2-mobile-universal-${V}.apk" ;;
-              *arm64-v8a*)    n="aria2-mobile-arm64-v8a-64位-${V}.apk" ;;
-              *armeabi-v7a*)  n="aria2-mobile-armeabi-v7a-32位-${V}.apk" ;;
+              *arm64-v8a*)    n="aria2-mobile-arm64-v8a-64bit-${V}.apk" ;;
+              *armeabi-v7a*)  n="aria2-mobile-armeabi-v7a-32bit-${V}.apk" ;;
               *)              n="aria2-mobile-${V}.apk" ;;
             esac
             mv "$f" "$n"
@@ -88,8 +88,8 @@ jobs:
           name: 最新构建 aria2-mobile ${{ env.VERSION }}
           body: |
             按 ABI 拆分为以下 APK（选择与你设备匹配的一个安装）：
-            - `aria2-mobile-arm64-v8a-64位-${{ env.VERSION }}.apk`：64 位设备（绝大多数现代手机）优先安装这个
-            - `aria2-mobile-armeabi-v7a-32位-${{ env.VERSION }}.apk`：仅支持 32 位的老设备
+            - `aria2-mobile-arm64-v8a-64bit-${{ env.VERSION }}.apk`：64 位设备（绝大多数现代手机）优先安装这个
+            - `aria2-mobile-armeabi-v7a-32bit-${{ env.VERSION }}.apk`：仅支持 32 位的老设备
             - `aria2-mobile-universal-${{ env.VERSION }}.apk`：通用包，同时含两种架构，体积约 2 倍，装机兼容性最好
             `${{ github.sha }}` · `${{ github.run_number }}`
           files: app/build/outputs/apk/release/*.apk
