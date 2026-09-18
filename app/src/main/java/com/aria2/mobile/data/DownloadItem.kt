@@ -1,21 +1,20 @@
 package com.aria2.mobile.data
 
-/** aria2 下载任务状态，映射自 aria2 的状态字符串。 */
-enum class DownloadStatus(val aria2State: String) {
-    Active("active"),
-    Waiting("waiting"),
-    Paused("paused"),
-    Error("error"),
-    Complete("complete"),
-    Removed("removed");
+/** 下载任务状态。 */
+enum class DownloadStatus {
+    Active,
+    Waiting,
+    Paused,
+    Error,
+    Complete,
+    Removed;
 
     val isDone: Boolean
         get() = this == Complete || this == Removed
 }
 
 /**
- * 单个下载任务。字段与 aria2.tellStatus 的核心字段对应，
- * 后端轮询时用其补齐进度、速度等实时信息。
+ * 单个下载任务。由 [com.aria2.mobile.service.DownloadEngine] 维护并实时更新进度、速度等。
  */
 data class DownloadItem(
     val gid: String,

@@ -48,11 +48,11 @@ jobs:
             echo "no keystore secrets - using debug-signing fallback"
           fi
 
-      - name: Build release APK (per-ABI split + universal)
+      - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon --console=plain
 
-      # 把拆分产物改名为人可读的文件名，并按 ABI 分发。
-      - name: Rename split APKs
+      # 单一通用 APK（不再嵌入原生二进制，故无需 ABI 拆分）。改名为人可读文件名。
+      - name: Rename APK
         shell: bash
         run: |
           set -e
@@ -60,37 +60,29 @@ jobs:
           echo "VERSION=$V" >> "$GITHUB_ENV"
           cd app/build/outputs/apk/release
           ls -1 *.apk
-          for f in app-*.apk; do
-            case "$f" in
-              *universal*)    n="aria2-mobile-universal-${V}.apk" ;;
-              *arm64-v8a*)    n="aria2-mobile-arm64-v8a-64bit-${V}.apk" ;;
-              *armeabi-v7a*)  n="aria2-mobile-armeabi-v7a-32bit-${V}.apk" ;;
-              *)              n="aria2-mobile-${V}.apk" ;;
-            esac
+          for f in *.apk; do
+            n="aria2-mobile-${V}.apk"
             mv "$f" "$n"
             echo "  -> $n"
           done
 
-      # 每个 APK 单独一个 artifact（Actions 页面仍会打包，但按架构区分，便于定位）。
-      - name: Upload APKs (separate per ABI)
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: aria2-mobile-apk
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
-      # 直接发布到 Release（Assets 是裸 .apk，可一键安装，不再嵌在 zip 里）。
-      - name: Publish APKs to Release (direct .apk)
+      # 直接发布到 Release（Assets 是裸 .apk，可一键安装）。
+      - name: Publish APK to Release
         uses: softprops/action-gh-release@v2
         if: github.event_name != 'pull_request'
         with:
           tag_name: build
           name: 最新构建 aria2-mobile ${{ env.VERSION }}
           body: |
-            按 ABI 拆分为以下 APK（选择与你设备匹配的一个安装）：
-            - `aria2-mobile-arm64-v8a-64bit-${{ env.VERSION }}.apk`：64 位设备（绝大多数现代手机）优先安装这个
-            - `aria2-mobile-armeabi-v7a-32bit-${{ env.VERSION }}.apk`：仅支持 32 位的老设备
-            - `aria2-mobile-universal-${{ env.VERSION }}.apk`：通用包，同时含两种架构，体积约 2 倍，装机兼容性最好
+            简化版：不再内嵌 aria2c / 不做 ABI 拆分，单一通用 APK，直接下载安装即可。
+            - `aria2-mobile-${{ env.VERSION }}.apk`：所有 32/64 位设备通用
             `${{ github.sha }}` · `${{ github.run_number }}`
           files: app/build/outputs/apk/release/*.apk
           fail_on_unmatched_files: false

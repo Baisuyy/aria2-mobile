@@ -47,7 +47,6 @@ fun AddScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var url by rememberSaveable(initialUrl) { mutableStateOf(initialUrl.orEmpty()) }
     var filename by rememberSaveable { mutableStateOf("") }
-    var optionsRaw by rememberSaveable { mutableStateOf("") }
     val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(state.lastError) {
@@ -103,24 +102,10 @@ fun AddScreen(
             )
         }
 
-        FormField("aria2 参数（可选，每行一个）") {
-            OutlinedTextField(
-                value = optionsRaw,
-                onValueChange = { optionsRaw = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("split=16\nseed-time=0", style = MaterialTheme.typography.bodyMedium) },
-                minLines = 2,
-                maxLines = 6,
-                shape = MaterialTheme.shapes.large,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                colors = fieldColors(),
-            )
-        }
-
         Spacer(Modifier.height(20.dp))
         Button(
             onClick = {
-                viewModel.addDownload(url, filename, optionsRaw)
+                viewModel.addDownload(url, filename)
                 if (url.isNotBlank()) onBack()
             },
             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -130,7 +115,7 @@ fun AddScreen(
             Text("开始下载", style = MaterialTheme.typography.titleMedium)
         }
         Text(
-            text = if (state.server.rpcUrl.isNotBlank()) "将推送到 ${state.server.rpcUrl}" else "请先到设置中配置 aria2 服务器",
+            text = "文件将保存到应用专属目录（Android/data/com.aria2.mobile/files/Download）",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(top = 10.dp, bottom = 24.dp),

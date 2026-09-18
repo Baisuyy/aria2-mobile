@@ -19,7 +19,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -28,7 +27,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aria2.mobile.data.LinkParser
-import com.aria2.mobile.service.Aria2Service
+import com.aria2.mobile.service.DownloadService
 import com.aria2.mobile.ui.components.AppNavigationBar
 import com.aria2.mobile.ui.screens.AddScreen
 import com.aria2.mobile.ui.screens.BrowserScreen
@@ -75,11 +74,9 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
     val navController = rememberNavController()
     val context = LocalContext.current
 
-    // 内嵌 aria2 本地服务：随开关启用/停用
-    val appState by viewModel.state.collectAsStateWithLifecycle()
-    LaunchedEffect(appState.embeddedEnabled) {
-        if (appState.embeddedEnabled) Aria2Service.start(context.applicationContext)
-        else Aria2Service.stop(context.applicationContext)
+    // 下载监听服务：App 一启动即常驻，负责接收并执行下载请求
+    LaunchedEffect(Unit) {
+        DownloadService.start(context.applicationContext)
     }
 
     // 收到外部链接：铵链到“新建下载”，让用户确认后一键开始

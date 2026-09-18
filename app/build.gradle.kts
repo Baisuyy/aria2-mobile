@@ -23,13 +23,8 @@ android {
         applicationId = "com.aria2.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.2.2"
-
-        // 仅内置这两个架构的 aria2c；ABI 拆包后每个 APK 只带对应架构的二进制
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-        }
+        versionCode = 6
+        versionName = "1.3.0"
     }
 
     signingConfigs {
@@ -72,16 +67,7 @@ android {
         compose = true
     }
 
-    // 按 ABI 拆包：armeabi-v7a（32 位）与 arm64-v8a（64 位）各出一个 APK，
-    // 另出一个 universal APK（同时含两者），便于用户按设备架构选择安装。
-    splits {
-        abi {
-            isEnable = true
-            reset()
-            include("armeabi-v7a", "arm64-v8a")
-            isUniversalApk = true
-        }
-    }
+    // 不再内置原生二进制：单一通用 APK，无需按 ABI 拆分。
 }
 
 dependencies {

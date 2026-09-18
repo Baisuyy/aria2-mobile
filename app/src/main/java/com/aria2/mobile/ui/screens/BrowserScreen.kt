@@ -69,7 +69,7 @@ import kotlinx.coroutines.launch
 /**
  * 内置浏览器：基于系统 WebView（Chromium 内核）。
  * - 修正常见显示问题：开启宽视口/总览模式、允许 HTTPS 页内 http 子资源、支持双指缩放。
- * - 捕获资源：拦截第三方下载协议（magnet/ed2k/thunder…）与网页下载文件，直接加入 aria2。
+ * - 捕获资源：拦截第三方下载协议（magnet/ed2k/thunder…）与网页下载文件，交给下载引擎。
  */
 @Composable
 fun BrowserScreen(
@@ -239,8 +239,8 @@ private fun configuredWebView(
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url.toString()
-                // 1) magnet/ed2k/thunder 等下载协议 → 交给 aria2
-                // 2) http/https 里“明显是文件下载”的直链（按扩展名）→ 交给 aria2，
+                // 1) magnet/ed2k/thunder 等下载协议 → 交给下载引擎
+                // 2) http/https 里“明显是文件下载”的直链（按扩展名）→ 交给下载引擎，
                 //    否则很多不带 Content-Disposition 头的站点点击下载时 WebView 只会去渲染，永远不产生下载事件
                 // 其余交给 WebView 正常渲染
                 return when {
@@ -299,7 +299,7 @@ private fun isExternalOrDownloadScheme(url: String): Boolean = when {
     else -> true
 }
 
-/** 常见可直接下载的文件扩展名；命中即视为下载链接，交给 aria2 以获得断点/并发下载。 */
+/** 常见可直接下载的文件扩展名；命中即视为下载链接，交给下载引擎以便支持断点/后台下载。 */
 private val DOWNLOAD_EXT = setOf(
     "apk", "zip", "rar", "7z", "gz", "bz2", "xz", "tgz", "tar", "zst",
     "mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "mpg", "mpeg",

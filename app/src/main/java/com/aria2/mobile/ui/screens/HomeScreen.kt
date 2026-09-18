@@ -52,7 +52,6 @@ import com.aria2.mobile.data.DownloadStatus
 import com.aria2.mobile.ui.formatSpeed
 import com.aria2.mobile.ui.components.ConnectionChip
 import com.aria2.mobile.ui.components.DownloadCard
-import com.aria2.mobile.viewmodel.ConnectionState
 import com.aria2.mobile.viewmodel.DownloadViewModel
 
 @Composable
@@ -72,27 +71,18 @@ fun HomeScreen(
         }
     }
 
-    val connected = state.connection == ConnectionState.Connected
-    val connecting = state.connection == ConnectionState.Connecting
-    val error = (state.connection as? ConnectionState.Error)?.message
+    val serviceOn = state.serviceOn
 
-    val subtitle = when (state.connection) {
-        ConnectionState.Connected -> "aria2 已连接"
-        ConnectionState.Connecting -> "aria2 连接中…"
-        ConnectionState.Idle -> "aria2 服务未配置"
-        is ConnectionState.Error -> "aria2 连不上"
-    }
+    val subtitle = if (serviceOn) "下载服务运行中" else "下载服务未启动"
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             TopBar(
-                connected = connected,
-                connecting = connecting,
-                error = error,
+                serviceOn = serviceOn,
                 subtitle = subtitle,
             )
-            if (!connected && !connecting) {
-                ServerSetupCard(requiresConfig = state.connection == ConnectionState.Idle, message = error, onOpenSettings = onOpenSettings)
+            if (!serviceOn) {
+                ServiceSetupCard(onOpenSettings = onOpenSettings)
             }
             if (state.downloads.isEmpty()) {
                 EmptyState(onOpenAdd = { onOpenAdd(null) })
@@ -143,14 +133,12 @@ fun HomeScreen(
 }
 
 private fun toggle(vm: DownloadViewModel, item: DownloadItem) {
-    if (item.status == DownloadStatus.Active) vm.pause(item.gid) else vm.unpause(item.gid)
+    if (item.status == DownloadStatus.Active) vm.pause(item.gid) else vm.resume(item.gid)
 }
 
 @Composable
 private fun TopBar(
-    connected: Boolean,
-    connecting: Boolean,
-    error: String?,
+    serviceOn: Boolean,
     subtitle: String,
 ) {
     Column(
@@ -167,15 +155,13 @@ private fun TopBar(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
-            ConnectionChip(connected, connecting, error)
+            ConnectionChip(connected = serviceOn, connecting = false, error = null)
         }
     }
 }
 
 @Composable
-private fun ServerSetupCard(
-    requiresConfig: Boolean,
-    message: String?,
+private fun ServiceSetupCard(
     onOpenSettings: () -> Unit,
 ) {
     val container = MaterialTheme.colorScheme.tertiaryContainer
@@ -200,13 +186,12 @@ private fun ServerSetupCard(
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (requiresConfig) "aria2 服务未配置" else "aria2 连接失败",
+                    "下载服务未启动",
                     style = MaterialTheme.typography.titleSmall,
                     color = onContainer,
                 )
                 Text(
-                    message?.takeIf { !requiresConfig }
-                        ?: "设置 RPC 地址即可开始下载，例如 http://127.0.0.1:6800/jsonrpc",
+                    "重新进入应用会启动下载服务并恢复未完成任务",
                     style = MaterialTheme.typography.bodySmall,
                     color = onContainer.copy(alpha = 0.75f),
                 )
