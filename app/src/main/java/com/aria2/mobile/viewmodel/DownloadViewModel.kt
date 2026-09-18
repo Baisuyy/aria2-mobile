@@ -10,6 +10,7 @@ import com.aria2.mobile.data.DownloadItem
 import com.aria2.mobile.data.DownloadPrefs
 import com.aria2.mobile.data.DownloadStatus
 import com.aria2.mobile.data.SettingsStore
+import com.aria2.mobile.service.EmbeddedAria2
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -93,6 +94,14 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- 配置写入 ----
+    /** 当前应连接的服务：内嵌 aria2 运行时优先连它（端口可能动态变化，不能硬编码 6800）。 */
+    private fun activeServer(): Aria2Server {
+        val base = _state.value.server
+        return if (EmbeddedAria2.status.value == EmbeddedAria2.Status.Running)
+            base.copy(rpcUrl = EmbeddedAria2.rpcUrl(), secret = "")
+        else base
+    }
+
     fun saveServer(rpcUrl: String, secret: String, onDone: () -> Unit = {}) {
         viewModelScope.launch {
             settings.setServer(rpcUrl, secret)
@@ -120,7 +129,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     fun addDownload(url: String, filename: String = "", optionsRaw: String = "") {
         if (url.isBlank()) return
         viewModelScope.launch {
-            val server = _state.value.server
+            val server = activeServer()
             if (!server.isConfigured) {
                 fail("尚未配置 aria2 服务器，请先在设置中填写 RPC 地址")
                 return@launch
@@ -153,12 +162,12 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- 任务控制 ----
-    fun pause(gid: String) = control { client.pause(_state.value.server, gid) }
-    fun unpause(gid: String) = control { client.unpause(_state.value.server, gid) }
+    fun pause(gid: String) = control { client.pause(activeServer(), gid) }
+    fun unpause(gid: String) = control { client.unpause(activeServer(), gid) }
     fun remove(gid: String) {
         viewModelScope.launch {
             try {
-                client.remove(_state.value.server, gid)
+                client.remove(activeServer(), gid)
             } catch (_: Exception) { /* 服务端已不存在 */ }
             untrack(gid)
         }
@@ -212,8 +221,7 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun refreshOnce() {
-        val s = _state.value
-        val server = s.server
+        val server = activeServer()
         if (!server.isConfigured) {
             _state.update { it.copy(connection = ConnectionState.Idle) }
             return

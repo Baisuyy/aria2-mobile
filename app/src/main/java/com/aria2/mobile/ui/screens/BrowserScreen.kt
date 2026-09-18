@@ -43,6 +43,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -51,6 +53,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,6 +81,14 @@ fun BrowserScreen(
     var hasLoaded by remember { mutableStateOf(initialUrl != null) }
     var progress by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+
+    // 捕获下载链接：给用户即时反馈（Snackbar），再跳转去新建下载
+    val capture: (String) -> Unit = remember(onCapture) { captured ->
+        scope.launch { snackbar.showSnackbar("已捕获下载链接") }
+        onCapture(captured)
+    }
 
     val webView = remember(context) {
         configuredWebView(
@@ -87,7 +98,7 @@ fun BrowserScreen(
             onProgress = { progress = it },
             onStart = { loadError = null },
             onError = { loadError = it },
-            onCapture = onCapture,
+            onCapture = capture,
         )
     }
 
@@ -174,6 +185,11 @@ fun BrowserScreen(
                 else -> BrowserStart(onGo = { load(webView, urlText) { hasLoaded = true } })
             }
         }
+
+        SnackbarHost(
+            snackbar,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        )
     }
 }
 
@@ -220,11 +236,16 @@ private fun configuredWebView(
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url.toString()
-                return if (isExternalOrDownloadScheme(u)) {
-                    onCapture(u)
-                    true
-                } else {
-                    false
+                // 1) magnet/ed2k/thunder 等下载协议 → 交给 aria2
+                // 2) http/https 里“明显是文件下载”的直链（按扩展名）→ 交给 aria2，
+                //    否则很多不带 Content-Disposition 头的站点点击下载时 WebView 只会去渲染，永远不产生下载事件
+                // 其余交给 WebView 正常渲染
+                return when {
+                    isExternalOrDownloadScheme(u) || looksLikeDownload(u) -> {
+                        onCapture(u)
+                        true
+                    }
+                    else -> false
                 }
             }
 
@@ -268,11 +289,29 @@ private fun configuredWebView(
     }
 }
 
-/** http/https 交给 WebView 渲染，其余协议（magnet/ed2k/thunder…）一律截获交给 aria2。 */
+/** 是否非 http/https 的可捕获协议（magnet/ed2k/thunder/qqdl/ftp…）。 */
 private fun isExternalOrDownloadScheme(url: String): Boolean = when {
     url.startsWith("http://") || url.startsWith("https://") -> false
-    url.startsWith("about:") || url.startsWith("data:") -> false
+    url.startsWith("about:") || url.startsWith("data:") || url.startsWith("blob:") || url.startsWith("file:") -> false
     else -> true
+}
+
+/** 常见可直接下载的文件扩展名；命中即视为下载链接，交给 aria2 以获得断点/并发下载。 */
+private val DOWNLOAD_EXT = setOf(
+    "apk", "zip", "rar", "7z", "gz", "bz2", "xz", "tgz", "tar", "zst",
+    "mp4", "mkv", "avi", "mov", "flv", "wmv", "webm", "mpg", "mpeg",
+    "mp3", "flac", "wav", "m4a", "aac", "ogg", "opus",
+    "torrent", "exe", "msi", "dmg", "iso", "bin",
+    "pdf", "epub", "mobi", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "cab", "pkg", "deb", "rpm", "apfs", "crx", "ttf", "woff2", "otf",
+)
+
+private fun looksLikeDownload(url: String): Boolean {
+    val u = url.lowercase()
+    if (!u.startsWith("http://") && !u.startsWith("https://")) return false
+    val path = u.substringAfter("://").substringBefore('?').substringBefore('#')
+    val ext = path.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+    return ext != null && ext in DOWNLOAD_EXT
 }
 
 @Composable
