@@ -86,9 +86,11 @@ fun BrowserScreen(
     val snackbar = remember { SnackbarHostState() }
 
     // 捕获下载链接：给用户即时反馈（Snackbar），再跳转去新建下载
-    val capture: (String) -> Unit = remember(onCapture) { captured ->
-        scope.launch { snackbar.showSnackbar("已捕获下载链接") }
-        onCapture(captured)
+    val capture: (String) -> Unit = remember(onCapture) {
+        { captured: String ->
+            scope.launch { snackbar.showSnackbar("已捕获下载链接") }
+            onCapture(captured)
+        }
     }
 
     val webView = remember(context) {
