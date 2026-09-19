@@ -16,11 +16,11 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * 前台服务：仅负责"监听下载请求"并承载 [DownloadEngine]。
+ * 前台服务：负责"监听下载请求"并承载 [DownloadEngine]。
  *
- * 与旧版（嵌入式 aria2c + JSON-RPC）不同，这里不做任何 aria2 服务仿真：
- * - APP 收到系统链接/内置浏览器捕获/手动输入 → [DownloadEngine.add] 直接进入下载；
- * - 服务保持常驻，使下载在后台持续进行，并关联常驻通知。
+ * 除接收系统链接/内置浏览器捕获/手动输入外，还会在本地回环启动极简 aria2
+ * JSON-RPC 监听（[Aria2RpcServer]，127.0.0.1:6800），接住网页/脚本 POST 过来的
+ * 下载请求，取出直链交给 [DownloadEngine.add] 下载，不做完整 aria2 仿真。
  */
 class DownloadService : Service() {
 
@@ -30,6 +30,7 @@ class DownloadService : Service() {
         super.onCreate()
         DownloadEngine.init(this)
         DownloadEngine.startListening()
+        Aria2RpcServer.start()
         startForeground(NOTIF_ID, buildNotification())
         observeForNotification()
     }
@@ -37,11 +38,13 @@ class DownloadService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         DownloadEngine.init(this)
         DownloadEngine.startListening()
+        Aria2RpcServer.start()
         startForeground(NOTIF_ID, buildNotification())
         return START_STICKY
     }
 
     override fun onDestroy() {
+        Aria2RpcServer.stop()
         DownloadEngine.stopListening()
         scope.cancel()
         super.onDestroy()
