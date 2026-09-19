@@ -76,7 +76,7 @@ object Aria2RpcServer {
     private fun handle(client: Socket) {
         try {
             client.soTimeout = 10_000
-            client.getInputStream().buffered().reader(StandardCharsets.UTF_8).use { reader ->
+            client.getInputStream().bufferedReader(StandardCharsets.UTF_8).use { reader ->
                 client.getOutputStream().buffered(8192).use { out ->
                     val requestLine = reader.readLine() ?: return
                     // 请求头：读取到空行（记录 Content-Length）
