@@ -88,8 +88,17 @@ object Aria2RpcServer {
                             line.substringAfter(':').trim().toIntOrNull()?.let { contentLength = it }
                         }
                     }
-                    val path = requestLine.split(" ").getOrNull(1) ?: "/"
-                    if (requestLine.startsWith("POST") && path == PATH) {
+                    val parts = requestLine.split(" ")
+                    val method = parts.getOrNull(0) ?: ""
+                    val pathname = (parts.getOrNull(1) ?: "/").substringBefore('?')
+
+                    // CORS 预检：跨源页面 fetch 到 127.0.0.1 前必须先通过这里
+                    if (method.equals("OPTIONS", ignoreCase = true)) {
+                        writeEmpty(out, 204)
+                        return
+                    }
+
+                    if (method.equals("POST", ignoreCase = true) && pathname == PATH) {
                         val body = if (contentLength > 0) {
                             val buf = CharArray(contentLength)
                             var off = 0
@@ -118,6 +127,29 @@ object Aria2RpcServer {
         }
     }
 
+    /** CORS 响应头：放行任意源（本站为 loopback 抓包工具，无需凭据）。 */
+    private fun corsHeaders(): String =
+        "Access-Control-Allow-Origin: *\r\n" +
+            "Access-Control-Allow-Methods: POST, GET, OPTIONS\r\n" +
+            "Access-Control-Allow-Headers: Content-Type, Accept, X-Aria2-Token, X-Aria2-Secret, Authorization, Range\r\n" +
+            "Access-Control-Max-Age: 86400\r\n"
+
+    private fun writeEmpty(out: java.io.OutputStream, statusCode: Int) {
+        val status = if (statusCode == 204) "204 No Content" else "200 OK"
+        val bytes = ByteArray(0)
+        val head = buildString {
+            append("HTTP/1.1 ").append(status).append("\r\n")
+            append("Content-Type: application/json; charset=utf-8\r\n")
+            append("Content-Length: ").append(bytes.size).append("\r\n")
+            append("Connection: keep-alive\r\n")
+            append(corsHeaders())
+            append("\r\n")
+        }.toByteArray(StandardCharsets.UTF_8)
+        out.write(head)
+        out.write(bytes)
+        out.flush()
+    }
+
     private fun writeJson(out: java.io.OutputStream, obj: JSONObject) {
         val bytes = obj.toString().toByteArray(StandardCharsets.UTF_8)
         val head = buildString {
@@ -125,6 +157,7 @@ object Aria2RpcServer {
             append("Content-Type: application/json; charset=utf-8\r\n")
             append("Content-Length: ").append(bytes.size).append("\r\n")
             append("Connection: close\r\n")
+            append(corsHeaders())
             append("\r\n")
         }.toByteArray(StandardCharsets.UTF_8)
         out.write(head)
