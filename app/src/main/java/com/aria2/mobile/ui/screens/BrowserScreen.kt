@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import android.webkit.CookieManager
+import android.webkit.ConsoleMessage
 import android.webkit.DownloadListener
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
@@ -88,6 +91,7 @@ fun BrowserScreen(
     // 捕获下载链接：给用户即时反馈（Snackbar），再跳转去新建下载
     val capture: (String) -> Unit = remember(onCapture) {
         { captured: String ->
+            Log.d(TAG, "捕获下载链接 => $captured")
             scope.launch { snackbar.showSnackbar("已捕获下载链接") }
             onCapture(captured)
         }
@@ -196,6 +200,40 @@ fun BrowserScreen(
     }
 }
 
+private const val TAG = "BrowserScreen"
+
+/** 目标站点：仅对该域名覆盖 UA，避免影响其它站点渲染。 */
+private const val TARGET_HOST = "kk.wpurl.cc"
+
+/** 参考数据包里被站点识别的 WebView UA（KsWebView 系），供目标站点设备注册。 */
+private const val OVERRIDE_UA = "Mozilla/5.0 (Linux; Android 10; Redmi Note 8 Pro Build/QP1A.190711.020; wv) " +
+    "AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/90.0.4430.226 " +
+    "KsWebView/1.8.90.529 (rel;r) Mobile Safari/537.36 Yoda/3.0.0-rc5 " +
+    "ksNebula/10.6.50.4023 OS_PRO_BIT/64 MAX_PHY_MEM/5498 AZPREFIX/zw " +
+    "ICFO/0 StatusHT/27 TitleHT/44 AliBaichuan(...) AllowKsCallApp NetType/WIFI " +
+    "ISLP/0 ISDM/0 ISLB/0 locale/zh-cn evaSupported/false CT/0"
+
+private fun isTargetHost(url: String?): Boolean {
+    val host = runCatching { Uri.parse(url ?: "").host }?.getOrNull() ?: return false
+    return host == TARGET_HOST || host.endsWith(".$TARGET_HOST")
+}
+
+/**
+ * 注入的 JS：包装 fetch / XMLHttpRequest，把发往本机 6800、/jsonrpc、localhost 的请求
+ * 用 console.log 打出（配合 onConsoleMessage 转发到 logcat），用于观测下载链路。
+ * 注意：此处为普通 Kotlin 字符串拼接，脚本内勿用 `$`（会触发字符串模板插值）。
+ */
+private const val OBSERVE_JS = "(function(){ if(window.__aria2Observe)return; " +
+    "window.__aria2Observe=1; " +
+    "var marker=/127\\.0\\.0\\.1|localhost|\\/jsonrpc|6800/i; " +
+    "var of=window.fetch; if(of){window.fetch=function(){ " +
+    "try{var a=[].slice.call(arguments); var u=typeof a[0]==='string'?a[0]:(a[0]&&a[0].url); " +
+    "if(marker.test(String(u)))console.log('[ARIA2-FETCH] '+u);}catch(e){} " +
+    "return of.apply(this,arguments);};} " +
+    "var XO=XMLHttpRequest.prototype.open; XMLHttpRequest.prototype.open=function(m,u){ " +
+    "try{if(marker.test(String(u)))console.log('[ARIA2-XHR] '+m+' '+u);}catch(e){} " +
+    "return XO.apply(this,arguments);};})();"
+
 private fun openExternally(context: Context, rawUrl: String) {
     val t = rawUrl.trim()
     if (t.isBlank()) return
@@ -236,6 +274,10 @@ private fun configuredWebView(
         settings.cacheMode = WebSettings.LOAD_DEFAULT
         // 不强制 LAYER_TYPE_HARDWARE：部分设备上会导致整页白屏/渲染异常
 
+        // Cookie 持久化：目标站点靠 kk_device_id / 协议同意 Cookie 注册设备，必须允许并保存
+        CookieManager.getInstance().setAcceptCookie(true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val u = request.url.toString()
@@ -245,16 +287,29 @@ private fun configuredWebView(
                 // 其余交给 WebView 正常渲染
                 return when {
                     isExternalOrDownloadScheme(u) || looksLikeDownload(u) -> {
+                        Log.d(TAG, "shouldOverrideUrlLoading 命中下载 => $u")
                         onCapture(u)
                         true
                     }
-                    else -> false
+                    else -> {
+                        // 观测：非下载跳转也打日志，便于判断页面是否在访问本机 6800
+                        Log.d(TAG, "shouldOverrideUrlLoading 放行 => $u")
+                        false
+                    }
                 }
             }
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 url?.let(onUrlChange)
                 onStart()
+                // 目标站点覆盖 UA（触发一次 reload），便于站点把当前设备识别为受支持客户端
+                if (url != null && isTargetHost(url) && view != null
+                    && view.settings.userAgentString != OVERRIDE_UA
+                ) {
+                    Log.d(TAG, "目标站点覆盖 UA，触发 reload: $url")
+                    view.settings.userAgentString = OVERRIDE_UA
+                    view.reload()
+                }
             }
 
             override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
@@ -270,6 +325,10 @@ private fun configuredWebView(
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 onUrlChange(view?.url?.toString().orEmpty())
+                CookieManager.getInstance().flush()
+                // 注入观测桥：页面若 fetch/XHR 到本机 6800、/jsonrpc 等会进控制台日志
+                view?.evaluateJavascript(OBSERVE_JS, null)
+                Log.d(TAG, "onPageFinished: ${view?.url}")
             }
 
             // 渲染进程崩溃（常见于系统 WebView 损坏或设备内存不足）：给出明确提示而非停留在白屏
@@ -283,6 +342,12 @@ private fun configuredWebView(
         webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 onProgress(newProgress)
+            }
+
+            // 转发页面 console 日志到 logcat，配合 OBSERVE_JS 观测下载链路
+            override fun onConsoleMessage(message: ConsoleMessage?): Boolean {
+                if (message != null) Log.d(TAG, "[console] ${message.message()}")
+                return true
             }
         }
 
