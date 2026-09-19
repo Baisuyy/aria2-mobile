@@ -61,6 +61,9 @@ object DownloadEngine {
     private val _items = MutableStateFlow<List<DownloadItem>>(emptyList())
     val items: StateFlow<List<DownloadItem>> = _items.asStateFlow()
 
+    /** 对外暴露当前下载根目录（RPC 端用于 getGlobalOption 等）。 */
+    fun downloadDir(): String = downloadsDir().absolutePath
+
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running.asStateFlow()
 

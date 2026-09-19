@@ -31,6 +31,7 @@ object Aria2RpcServer {
     private const val HOST = "127.0.0.1"
     const val PORT = 6800
     const val PATH = "/jsonrpc"
+    private const val RPC_PATH = "/rpc"
 
     private val running = AtomicBoolean(false)
     @Volatile private var serverSocket: ServerSocket? = null
@@ -90,7 +91,9 @@ object Aria2RpcServer {
                     }
                     val parts = requestLine.split(" ")
                     val method = parts.getOrNull(0) ?: ""
-                    val pathname = (parts.getOrNull(1) ?: "/").substringBefore('?')
+                    val rawPath = parts.getOrNull(1) ?: "/"
+                    val pathname = rawPath.substringBefore('?')
+                    val query = rawPath.substringAfter('?', "")
 
                     // CORS 预检：跨源页面 fetch 到 127.0.0.1 前必须先通过这里
                     if (method.equals("OPTIONS", ignoreCase = true)) {
@@ -98,7 +101,9 @@ object Aria2RpcServer {
                         return
                     }
 
-                    if (method.equals("POST", ignoreCase = true) && pathname == PATH) {
+                    val isRpcPath = pathname == PATH || pathname == RPC_PATH
+
+                    if (method.equals("POST", ignoreCase = true) && isRpcPath) {
                         val body = if (contentLength > 0) {
                             val buf = CharArray(contentLength)
                             var off = 0
@@ -109,14 +114,37 @@ object Aria2RpcServer {
                             }
                             String(buf, 0, off)
                         } else ""
-                        writeJson(out, dispatch(body))
-                    } else {
-                        // GET 或其它路径：AriaNG 会 GET 探测，返回兼容空错误
-                        val err = JSONObject()
+                        writeJson(out, dispatchText(body))
+                    } else if (method.equals("GET", ignoreCase = true) && isRpcPath
+                        && query.toQueryParam("method").isNotEmpty()
+                    ) {
+                        // GET 形式的 JSON-RPC：/?method=aria2.getVersion&id=1&params=[]
+                        val paramsRaw = query.toQueryParam("params")
+                        val payload = JSONObject()
                             .put("jsonrpc", "2.0")
-                            .put("id", null)
-                            .put("error", jsonError(1, "method not found"))
-                        writeJson(out, err)
+                            .put("id", query.toQueryParam("id").ifEmpty { "1" })
+                            .put("method", query.toQueryParam("method"))
+                            .put("params",
+                                if (paramsRaw.isBlank()) JSONArray()
+                                else runCatching { JSONArray(paramsRaw) }.getOrDefault(JSONArray()))
+                        writeJson(out, dispatchPayload(payload))
+                    } else if (method.equals("GET", ignoreCase = true)
+                        && (pathname == "/" || pathname == "/index.html" || pathname == "/status")
+                    ) {
+                        // 状态探测页
+                        val stat = JSONObject()
+                        writeJson(out, JSONObject().apply {
+                            put("service", "aria2-mobile")
+                            put("version", "1.36.0")
+                            put("endpoint", "http://$HOST:$PORT$PATH")
+                            put("globalStat", stat)
+                        })
+                    } else {
+                        writeJson(out, JSONObject().apply {
+                            put("jsonrpc", "2.0")
+                            put("id", null)
+                            put("error", jsonError(-32601, "Method not found"))
+                        })
                     }
                 }
             }
@@ -167,39 +195,54 @@ object Aria2RpcServer {
 
     // ---- JSON-RPC 分发 ----
 
-    private fun dispatch(body: String): JSONObject {
-        return try {
-            val req = JSONObject(body)
-            val id = req.opt("id")
-            val method = req.optString("method", "")
-            val params = req.optJSONArray("params") ?: JSONArray()
+    private class RpcError(val code: Int, msg: String) : Exception(msg)
+    private fun fail(code: Int, msg: String): Nothing = throw RpcError(code, msg)
 
+    private fun dispatchText(body: String): JSONObject = try {
+        dispatchPayload(JSONObject(body))
+    } catch (e: Exception) {
+        JSONObject().put("jsonrpc", "2.0").put("id", null)
+            .put("error", jsonError(-32700, "Parse error: ${e.message}"))
+    }
+
+    private fun dispatchPayload(req: JSONObject): JSONObject {
+        val id = req.opt("id")
+        return try {
+            val method = req.optString("method", "")
             if (method == "system.multicall") {
-                handleMulticall(id, params)
+                handleMulticall(id, req.optJSONArray("params") ?: JSONArray())
             } else {
-                val result = handleMethod(method, params)
-                // 正常返回
-                JSONObject().put("jsonrpc", "2.0").put("id", id).put("result", result)
+                JSONObject().put("jsonrpc", "2.0").put("id", id)
+                    .put("result", handleMethod(method, req.optJSONArray("params") ?: JSONArray()))
             }
+        } catch (e: RpcError) {
+            JSONObject().put("jsonrpc", "2.0").put("id", id)
+                .put("error", jsonError(e.code, e.message ?: "error"))
         } catch (e: Exception) {
-            JSONObject()
-                .put("jsonrpc", "2.0").put("id", null)
-                .put("error", jsonError(1, e.message ?: "internal error"))
+            JSONObject().put("jsonrpc", "2.0").put("id", id)
+                .put("error", jsonError(-32603, e.message ?: "Internal error"))
         }
     }
 
-    /** 处理 system.multicall：params = [{methodName, params}, ...]。 */
+    /** 处理 system.multicall：结果每项包成 `[res]`，失败返回 faultCode/faultString（AriaNG 协议）。 */
     private fun handleMulticall(id: Any?, params: JSONArray): JSONObject {
         val results = JSONArray()
         for (i in 0 until params.length()) {
             val call = params.optJSONObject(i)
             if (call == null) { results.put(null); continue }
-            val m = call.optString("methodName")
-            val p = call.optJSONArray("params") ?: JSONArray()
             try {
-                results.put(handleMethod(m, p))
+                results.put(JSONArray().put(
+                    handleMethod(call.optString("methodName"),
+                        call.optJSONArray("params") ?: JSONArray())
+                ))
+            } catch (e: RpcError) {
+                results.put(JSONObject()
+                    .put("faultCode", e.code.toString())
+                    .put("faultString", e.message ?: "error"))
             } catch (e: Exception) {
-                results.put(JSONObject().put("fault", jsonError(1, e.message ?: "error")))
+                results.put(JSONObject()
+                    .put("faultCode", "-32603")
+                    .put("faultString", e.message ?: "Internal error"))
             }
         }
         return JSONObject().put("jsonrpc", "2.0").put("id", id).put("result", results)
@@ -215,17 +258,50 @@ object Aria2RpcServer {
         val params = stripToken(rawParams)
         return when (method) {
             "aria2.getVersion" -> getVersion()
+            "aria2.getSessionInfo" ->
+                JSONObject().put("sessionId",
+                    java.util.UUID.randomUUID().toString().replace("-", ""))
             "aria2.addUri" -> addUri(params)
-            "aria2.addTorrent" -> jsonError(1, "unsupported: use direct link") as Any
+            "aria2.addTorrent" -> fail(1, "unsupported: use direct link")
             "aria2.getGlobalStat" -> getGlobalStat()
+            "aria2.getGlobalOption" -> globalOption()
+            "aria2.changeGlobalOption" -> "OK"
+            "aria2.getOption" -> JSONObject()
+            "aria2.changeOption" -> "OK"
             "aria2.tellActive" -> listToStatus()
-            "aria2.tellWaiting" -> { params.optInt(1, 1000); listToStatus() }
+            "aria2.tellWaiting" -> listToStatus()
             "aria2.tellStopped" -> listToStatus()
             "aria2.tellStatus" -> tellStatus(params)
-            "aria2.pause" -> toggleStatus(params, DownloadStatus.Paused)
-            "aria2.unpause" -> toggleStatus(params, DownloadStatus.Waiting)
+            "aria2.getUris" -> JSONArray()
+            "aria2.getFiles" -> JSONArray()
+            "aria2.getPeers" -> JSONArray()
+            "aria2.getServers" -> JSONArray()
+            "aria2.pause" -> toggle(params, DownloadStatus.Paused)
+            "aria2.forcePause" -> toggle(params, DownloadStatus.Paused)
+            "aria2.unpause" -> toggle(params, DownloadStatus.Waiting)
+            "aria2.pauseAll" -> {
+                DownloadEngine.items.value
+                    .filter { it.status == DownloadStatus.Active }
+                    .forEach { DownloadEngine.pause(it.gid) }
+                "OK"
+            }
+            "aria2.forcePauseAll" -> "OK"
+            "aria2.unpauseAll" -> "OK"
             "aria2.remove" -> removeByGid(params)
-            else -> jsonError(1, "method not found: $method") as Any
+            "aria2.forceRemove" -> removeByGid(params)
+            "aria2.removeDownloadResult" -> "OK"
+            "aria2.purgeDownloadResult" -> "OK"
+            "aria2.changePosition" -> "OK"
+            "aria2.changeUri" -> "OK"
+            "aria2.shutdown" -> "OK"
+            "aria2.forceShutdown" -> "OK"
+            "aria2.saveSession" -> "OK"
+            "system.listMethods" -> JSONArray().apply {
+                put("aria2.addUri"); put("aria2.getVersion")
+                put("aria2.getGlobalStat"); put("aria2.tellStatus")
+                put("system.multicall"); put("aria2.pause"); put("aria2.unpause")
+            }
+            else -> fail(-32601, "Method not found: $method")
         }
     }
 
@@ -260,17 +336,29 @@ object Aria2RpcServer {
             })
     )
 
-    /** aria2.addUri：params[0] = URI 数组。取首个有效链接加入下载。 */
+    /** aria2.addUri：params[0] = URI 数组（或单个字符串）。取首个有效链接加入下载。 */
     private fun addUri(params: JSONArray): String {
-        val uris = params.optJSONArray(0) ?: JSONArray()
-        for (i in 0 until uris.length()) {
-            val u = uris.optString(i).trim()
-            if (u.isBlank()) continue
-            val gid = DownloadEngine.add(u)
+        if (params.length() == 0) fail(-32602, "Invalid params: no uri")
+        val first = params.opt(0)
+        val uris = when (first) {
+            is String -> listOf(first)
+            is JSONArray -> (0 until first.length()).map { first.optString(it) }
+            else -> emptyList()
+        }
+        for (u in uris) {
+            val v = u.trim()
+            if (v.isBlank()) continue
+            val gid = DownloadEngine.add(v)
             if (gid.isNotBlank()) return gid
         }
-        throw IllegalArgumentException("no valid uri in addUri")
+        fail(-32602, "Invalid params: no valid uri")
     }
+
+    private fun globalOption(): JSONObject = JSONObject()
+        .put("dir", DownloadEngine.downloadDir())
+        .put("max-concurrent-downloads", "4")
+        .put("split", "4")
+        .put("continue", "true")
 
     private fun getGlobalStat(): JSONObject {
         val list = DownloadEngine.items.value
@@ -298,7 +386,8 @@ object Aria2RpcServer {
         return if (item != null) itemToJson(item) else jsonError(1, "gid not found: $gid") as JSONObject
     }
 
-    private fun toggleStatus(params: JSONArray, target: DownloadStatus): String {
+    private fun toggle(params: JSONArray, target: DownloadStatus): String {
+        if (params.length() == 0) fail(1, "missing gid")
         val gid = params.optString(0)
         when (target) {
             DownloadStatus.Paused -> DownloadEngine.pause(gid)
@@ -340,4 +429,17 @@ object Aria2RpcServer {
 
     private fun jsonError(code: Int, message: String): JSONObject =
         JSONObject().put("code", code).put("message", message)
+
+    /** 从查询串 `a=1&b=2` 取某个参数的 URL 解码值，无则返回空串。 */
+    private fun String.toQueryParam(name: String): String {
+        for (pair in split('&')) {
+            val idx = pair.indexOf('=')
+            if (idx > 0 && pair.substring(0, idx) == name) {
+                return runCatching {
+                    java.net.URLDecoder.decode(pair.substring(idx + 1), "UTF-8")
+                }.getOrDefault(pair.substring(idx + 1))
+            }
+        }
+        return ""
+    }
 }
