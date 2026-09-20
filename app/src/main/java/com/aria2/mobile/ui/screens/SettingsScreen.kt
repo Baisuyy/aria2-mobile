@@ -9,7 +9,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.align
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -348,12 +346,13 @@ private fun LogsSettings(viewModel: DownloadViewModel) {
             color = MaterialTheme.colorScheme.surfaceVariant,
         ) {
             if (state.logs.isEmpty()) {
-                Text(
-                    "（暂无日志）",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 120.dp),
-                )
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "（暂无日志）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
             } else {
                 Text(
                     state.logs.joinToString("\n"),
@@ -457,9 +456,9 @@ private fun AppearanceSettings() {
             Modifier.fillMaxWidth().padding(top = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            ModeButton("跟随系统", themeMode == "system") { scope.launch { store.setThemeMode("system") } }
-            ModeButton("浅色", themeMode == "light") { scope.launch { store.setThemeMode("light") } }
-            ModeButton("深色", themeMode == "dark") { scope.launch { store.setThemeMode("dark") } }
+            ModeButton("跟随系统", themeMode == "system", Modifier.weight(1f)) { scope.launch { store.setThemeMode("system") } }
+            ModeButton("浅色", themeMode == "light", Modifier.weight(1f)) { scope.launch { store.setThemeMode("light") } }
+            ModeButton("深色", themeMode == "dark", Modifier.weight(1f)) { scope.launch { store.setThemeMode("dark") } }
         }
 
         Spacer(Modifier.height(14.dp))
@@ -550,12 +549,11 @@ private fun AppearanceSettings() {
 }
 
 @Composable
-private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun ModeButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val shape = RoundedCornerShape(12.dp)
     if (selected) {
         Box(
-            Modifier
-                .weight(1f)
+            modifier
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.primary)
                 .clickable(onClick = onClick)
@@ -566,8 +564,7 @@ private fun ModeButton(label: String, selected: Boolean, onClick: () -> Unit) {
         }
     } else {
         Box(
-            Modifier
-                .weight(1f)
+            modifier
                 .clip(shape)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .clickable(onClick = onClick)
