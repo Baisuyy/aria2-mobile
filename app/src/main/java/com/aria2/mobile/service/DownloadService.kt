@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.aria2.mobile.R
+import com.aria2.mobile.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,6 +29,8 @@ class DownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        AppLogger.init(this)
+        AppLogger.i(TAG, "下载服务启动")
         DownloadEngine.init(this)
         DownloadEngine.startListening()
         Aria2RpcServer.start()
@@ -44,6 +47,7 @@ class DownloadService : Service() {
     }
 
     override fun onDestroy() {
+        AppLogger.i("DownloadService", "下载服务停止")
         Aria2RpcServer.stop()
         DownloadEngine.stopListening()
         scope.cancel()
@@ -82,6 +86,7 @@ class DownloadService : Service() {
             .build()
 
     companion object {
+        private const val TAG = "DownloadService"
         private const val CHANNEL_ID = "download_service"
         private const val NOTIF_ID = 1
 

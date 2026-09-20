@@ -7,6 +7,7 @@ import com.aria2.mobile.data.DownloadItem
 import com.aria2.mobile.data.DownloadStatus
 import com.aria2.mobile.data.SettingsStore
 import com.aria2.mobile.service.DownloadEngine
+import com.aria2.mobile.util.AppLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +20,8 @@ data class UiState(
     val keepScreenOn: Boolean = false,
     val downloads: List<DownloadItem> = emptyList(),
     val lastError: String? = null,
+    val userAgent: String = "",
+    val logs: List<String> = emptyList(),
     // 聚合统计
     val totalSpeed: Long = 0,
     val activeCount: Int = 0,
@@ -60,6 +63,18 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
         }
+        // UA 设置
+        viewModelScope.launch {
+            settings.userAgent.collect { ua ->
+                _state.update { it.copy(userAgent = ua) }
+            }
+        }
+        // 日志缓冲
+        viewModelScope.launch {
+            AppLogger.buffer.collect { logs ->
+                _state.update { it.copy(logs = logs) }
+            }
+        }
     }
 
     // ---- 下载入口 ----
@@ -87,6 +102,24 @@ class DownloadViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setKeepScreenOn(value: Boolean) {
         viewModelScope.launch { settings.setKeepScreenOn(value) }
+    }
+
+    fun setUserAgent(value: String) {
+        viewModelScope.launch { settings.setUserAgent(value) }
+    }
+
+    /** 将 UA 恢复为默认值。 */
+    fun resetUserAgent() {
+        viewModelScope.launch { settings.setUserAgent("") }
+    }
+
+    fun clearLogs() {
+        AppLogger.clear()
+    }
+
+    fun shareLogs() {
+        val ctx = getApplication<Application>()
+        AppLogger.share(ctx)
     }
 
     fun clearError() = _state.update { it.copy(lastError = null) }

@@ -4,6 +4,10 @@ import android.content.Context
 import android.util.Log
 import com.aria2.mobile.data.DownloadItem
 import com.aria2.mobile.data.DownloadStatus
+import com.aria2.mobile.data.DEFAULT_UA
+import com.aria2.mobile.data.SettingsStore
+import com.aria2.mobile.util.AppLogger
+import com.aria2.mobile.util.DownloadPublisher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +25,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
+import android.os.Environment
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -42,6 +47,7 @@ object DownloadEngine {
     private const val CHUNK = 64 * 1024
 
     private lateinit var appContext: Context
+    private lateinit var settings: SettingsStore
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -61,8 +67,10 @@ object DownloadEngine {
     private val _items = MutableStateFlow<List<DownloadItem>>(emptyList())
     val items: StateFlow<List<DownloadItem>> = _items.asStateFlow()
 
-    /** 对外暴露当前下载根目录（RPC 端用于 getGlobalOption 等）。 */
-    fun downloadDir(): String = downloadsDir().absolutePath
+    /**
+     * 对外暴露下载目录（RPC getGlobalOption / 展示）。返回系统公共 Downloads 目录。
+     */
+    fun downloadDir(): String = publicDownloadDir().absolutePath
 
     private val _running = MutableStateFlow(false)
     val running: StateFlow<Boolean> = _running.asStateFlow()
@@ -73,10 +81,19 @@ object DownloadEngine {
     fun init(context: Context) {
         if (::appContext.isInitialized) return
         appContext = context.applicationContext
+        settings = SettingsStore(appContext)
+        AppLogger.init(appContext)
         restore()
     }
 
-    private fun downloadsDir(): File =
+    /** 展示/记录用：系统公共「下载」目录。 */
+    private fun publicDownloadDir(): File {
+        val base = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        return File(base.absolutePath).apply { mkdirs() }
+    }
+
+    /** 下载过程的工作目录（.part 与未发布的完成文件存放处，作用域存储可写）。 */
+    private fun workingDir(): File =
         File(appContext.getExternalFilesDir(null), "Download").apply { mkdirs() }
 
     private fun metaFile() = File(appContext.filesDir, "downloads.json")
@@ -90,12 +107,13 @@ object DownloadEngine {
             gid = gid,
             uri = url,
             filename = filename,
-            directory = downloadsDir().absolutePath,
+            directory = publicDownloadDir().absolutePath,
             status = DownloadStatus.Waiting,
         )
         tasks[gid] = Task(item = item)
         publish()
         persist()
+        AppLogger.i(TAG, "新增任务 $gid → $url")
         if (_running.value) startTask(gid)
         return gid
     }
@@ -165,6 +183,7 @@ object DownloadEngine {
         if (task.item.status == DownloadStatus.Complete) return
         setStatus(gid, DownloadStatus.Active)
         task.cancelRequested = false
+        AppLogger.i(TAG, "开始下载 $gid: ${task.item.uri}")
         task.job = scope.launch(Dispatchers.IO) { performDownload(task) }
     }
 
@@ -173,8 +192,9 @@ object DownloadEngine {
         val part = partialFileOf(task.item)
         try {
             val startByte = part.length()
+            val ua = settings.currentUserAgent()
             val request = Request.Builder().url(task.item.uri)
-                .header("User-Agent", "Mozilla/5.0 (Linux; Android) OkHttp/aria2-mobile")
+                .header("User-Agent", ua)
                 .apply { if (startByte > 0) header("Range", "bytes=$startByte-") }
                 .build()
 
@@ -251,17 +271,27 @@ object DownloadEngine {
                 val finalCompleted = part.length()
                 val done = totalLength <= 0 || finalCompleted >= totalLength
                 if (done) {
-                    val finalFile = finalFileOf(task.item)
-                    part.renameTo(finalFile)
+                    val finalLocal = finalFileOf(task.item)
+                    part.renameTo(finalLocal)
+                    // 发布到系统公共「下载」目录（作用域存储下经 MediaStore 写入）
+                    val published = DownloadPublisher.publish(appContext, finalLocal, finalLocal.name)
+                    finalLocal.delete()
+                    val (dir, name) = if (published != null) {
+                        published.path.removeSuffix("/" + published.name) to published.name
+                    } else {
+                        workingDir().absolutePath to finalLocal.name
+                    }
                     updateTask(gid) {
                         it.copy(
                             completedLength = if (totalLength > 0) totalLength else finalCompleted,
                             totalLength = if (totalLength > 0) totalLength else finalCompleted,
                             status = DownloadStatus.Complete,
                             downloadSpeed = 0,
-                            filename = finalFile.name,
+                            filename = name,
+                            directory = dir,
                         )
                     }
+                    AppLogger.i(TAG, "下载完成 $gid → ${published?.path ?: finalLocal.absolutePath}")
                     persist()
                 } else {
                     setStatus(gid, DownloadStatus.Waiting)
@@ -271,6 +301,7 @@ object DownloadEngine {
             if (task.paused || !scope.isActive) {
                 if (task.paused) setStatus(gid, DownloadStatus.Paused)
             } else {
+                AppLogger.e(TAG, "下载失败 $gid: ${e.message}")
                 Log.w(TAG, "download failed: ${task.item.uri}", e)
                 setStatus(gid, DownloadStatus.Error, e.message ?: "下载失败")
                 persist()
@@ -343,15 +374,12 @@ object DownloadEngine {
                     gid = o.optString("gid"),
                     uri = o.optString("uri"),
                     filename = o.optString("filename"),
-                    directory = o.optString("directory").ifBlank { downloadsDir().absolutePath },
+                    directory = o.optString("directory").ifBlank { publicDownloadDir().absolutePath },
                     status = status,
                     totalLength = o.optLong("total"),
                     completedLength = o.optLong("completed"),
                 )
-                // 完成的任务：若最终文件仍存在则保持 Complete
-                if (status == DownloadStatus.Complete && !finalFileOf(item).exists()) {
-                    status = DownloadStatus.Waiting
-                }
+                // 已完成任务信任已持久化的元数据（文件已发布到公共目录，无需在工作区校验）
                 tasks[item.gid] = Task(item = item)
             }
             publish()
@@ -362,12 +390,12 @@ object DownloadEngine {
 
     private fun partialFileOf(item: DownloadItem): File {
         val name = item.filename.ifBlank { deriveName(item.uri) }
-        return File(item.directory, "$name.part")
+        return File(workingDir(), "$name.part")
     }
 
     private fun finalFileOf(item: DownloadItem): File {
         val name = item.filename.ifBlank { deriveName(item.uri) }
-        return File(item.directory, name)
+        return File(workingDir(), name)
     }
 
     private fun deriveName(uri: String): String {

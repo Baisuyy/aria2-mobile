@@ -348,6 +348,7 @@ object Aria2RpcServer {
         for (u in uris) {
             val v = u.trim()
             if (v.isBlank()) continue
+            com.aria2.mobile.util.AppLogger.i(TAG, "RPC 捕获下载: $v")
             val gid = DownloadEngine.add(v)
             if (gid.isNotBlank()) return gid
         }
