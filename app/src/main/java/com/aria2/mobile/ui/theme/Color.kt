@@ -25,3 +25,25 @@ val LightOutline = Color(0xFFE2E6EC)
 val LightOnBg = Color(0xFF13161C)
 val LightOnSurface = Color(0xFF3A404C)
 val LightMuted = Color(0xFF8A94A3)
+
+/** 解析 "#RRGGBB" 或 "#AARRGGBB" 颜色；非法返回 null。 */
+fun parseHexColor(hex: String): Color? {
+    val h = hex.removePrefix("#").trim()
+    if (h.length != 6 && h.length != 8) return null
+    val rgb = h.take(6).toLongOrNull(16) ?: return null
+    val alpha = if (h.length == 8) (h.takeLast(2).toIntOrNull(16) ?: 255) else 255
+    return Color(
+        red = ((rgb shr 16) and 0xFF) / 255f,
+        green = ((rgb shr 8) and 0xFF) / 255f,
+        blue = (rgb and 0xFF) / 255f,
+        alpha = alpha / 255f,
+    )
+}
+
+/** 把 Color 转成 "#RRGGBB" 字符串。 */
+fun Color.toHex(): String =
+    "#%02X%02X%02X".format(
+        ((red * 255).toInt().coerceIn(0, 255)),
+        ((green * 255).toInt().coerceIn(0, 255)),
+        ((blue * 255).toInt().coerceIn(0, 255)),
+    )

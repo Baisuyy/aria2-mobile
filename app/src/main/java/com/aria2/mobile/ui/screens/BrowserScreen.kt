@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -81,8 +82,10 @@ fun BrowserScreen(
     onCapture: (String) -> Unit,
 ) {
     val context = LocalContext.current
-    var urlText by rememberSaveable { mutableStateOf(initialUrl ?: "") }
-    var hasLoaded by remember { mutableStateOf(initialUrl != null) }
+    // 未指定链接时，默认打开内置「闪链」主页
+    val startUrl = initialUrl ?: HOME_URL
+    var urlText by rememberSaveable { mutableStateOf(startUrl) }
+    var hasLoaded by remember { mutableStateOf(startUrl.isNotEmpty()) }
     var progress by remember { mutableIntStateOf(0) }
     var loadError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -97,10 +100,10 @@ fun BrowserScreen(
         }
     }
 
-    val webView = remember(context) {
+    val webView = remember(context, startUrl) {
         configuredWebView(
             context = context,
-            url = initialUrl,
+            url = startUrl,
             onUrlChange = { urlText = it },
             onProgress = { progress = it },
             onStart = { loadError = null },
@@ -164,6 +167,13 @@ fun BrowserScreen(
                     tint = MaterialTheme.colorScheme.onBackground,
                 )
             }
+            IconButton(onClick = { load(webView, HOME_URL) { hasLoaded = true } }) {
+                Icon(
+                    Icons.Filled.Home,
+                    contentDescription = "首页（闪链）",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
         }
 
         if (hasLoaded && progress in 1 until 100) {
@@ -201,6 +211,9 @@ fun BrowserScreen(
 }
 
 private const val TAG = "BrowserScreen"
+
+/** 内置「闪链」主页。 */
+const val HOME_URL = "https://kk.wpurl.cc/"
 
 /** 目标站点：仅对该域名覆盖 UA，避免影响其它站点渲染。 */
 private const val TARGET_HOST = "kk.wpurl.cc"

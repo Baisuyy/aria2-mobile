@@ -23,8 +23,8 @@ android {
         applicationId = "com.aria2.mobile"
         minSdk = 29
         targetSdk = 34
-        versionCode = 7
-        versionName = "1.4.0"
+        versionCode = 8
+        versionName = "1.4.0.1"
     }
 
     signingConfigs {

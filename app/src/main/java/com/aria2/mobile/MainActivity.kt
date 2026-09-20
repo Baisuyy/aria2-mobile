@@ -9,6 +9,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -16,9 +17,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -27,6 +31,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.aria2.mobile.data.LinkParser
+import com.aria2.mobile.data.SettingsStore
 import com.aria2.mobile.service.DownloadService
 import com.aria2.mobile.ui.components.AppNavigationBar
 import com.aria2.mobile.ui.screens.AddScreen
@@ -34,6 +39,11 @@ import com.aria2.mobile.ui.screens.BrowserScreen
 import com.aria2.mobile.ui.screens.HomeScreen
 import com.aria2.mobile.ui.screens.SettingsScreen
 import com.aria2.mobile.ui.theme.Aria2Theme
+import com.aria2.mobile.ui.theme.AppThemeConfig
+import com.aria2.mobile.ui.theme.Accent
+import com.aria2.mobile.ui.theme.DarkOnBg
+import com.aria2.mobile.ui.theme.LightOnBg
+import com.aria2.mobile.ui.theme.parseHexColor
 import com.aria2.mobile.viewmodel.DownloadViewModel
 
 class MainActivity : ComponentActivity() {
@@ -79,6 +89,27 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
         DownloadService.start(context.applicationContext)
     }
 
+    // 主题：从持久化设置读取外观配置
+    val settingsStore = remember { SettingsStore(context.applicationContext) }
+    val themeMode by settingsStore.themeMode.collectAsStateWithLifecycle(initialValue = "system")
+    val primaryHex by settingsStore.primaryColor.collectAsStateWithLifecycle(initialValue = "")
+    val textHex by settingsStore.textColor.collectAsStateWithLifecycle(initialValue = "")
+    val bgImageUri by settingsStore.bgImage.collectAsStateWithLifecycle(initialValue = "")
+    val overlayAlpha by settingsStore.overlayAlpha.collectAsStateWithLifecycle(initialValue = 0f)
+    val systemDark = isSystemInDarkTheme()
+    val dark = when (themeMode) {
+        "dark" -> true
+        "light" -> false
+        else -> systemDark
+    }
+    val themeConfig = AppThemeConfig(
+        dark = dark,
+        primary = parseHexColor(primaryHex) ?: Accent,
+        textColor = parseHexColor(textHex) ?: (if (dark) DarkOnBg else LightOnBg),
+        bgImageUri = bgImageUri.ifBlank { null },
+        overlayAlpha = overlayAlpha,
+    )
+
     // 收到外部链接：铵链到“新建下载”，让用户确认后一键开始
     LaunchedEffect(urlToOpen) {
         urlToOpen?.let { url ->
@@ -91,14 +122,15 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
     val currentRoute = backStack?.destination?.route
     val showBottomBar = currentRoute in listOf("home", "settings") || currentRoute?.startsWith("browser") == true
 
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                AppNavigationBar(currentRoute = currentRoute, onNavigate = { route -> navigateTo(navController, route) })
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.background,
-    ) { padding ->
+    Aria2Theme(config = themeConfig) {
+        Scaffold(
+            bottomBar = {
+                if (showBottomBar) {
+                    AppNavigationBar(currentRoute = currentRoute, onNavigate = { route -> navigateTo(navController, route) })
+                }
+            },
+            containerColor = Color.Transparent,
+        ) { padding ->
         NavHost(
             navController = navController,
             startDestination = "home",
@@ -148,6 +180,7 @@ private fun Aria2App(viewModel: DownloadViewModel, urlToOpen: String?, onUrlCons
                     onBack = { navController.popBackStack() },
                 )
             }
+        }
         }
     }
 }
